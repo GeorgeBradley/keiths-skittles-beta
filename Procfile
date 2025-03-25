@@ -1,1 +1,1 @@
-web: gunicorn keiths_skittles.asgi:application -k uvicorn.workers.UvicornWorker
+web: gunicorn keiths_skittles_beta.asgi:application -k uvicorn.workers.UvicornWorker
