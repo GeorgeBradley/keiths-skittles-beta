@@ -27,7 +27,12 @@
             {% endif %}
             <li class="nav-item"><a class="nav-link" href="{% url 'past_games' %}">Past Games</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'add_player' %}">Players</a></li>
-            <li class="nav-item"><a class="nav-link" href="{% url 'logout' %}">Logout</a></li>
+            <li class="nav-item">
+              <form action="{% url 'logout' %}" method="post" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="nav-link border-0 bg-transparent" style="cursor: pointer;">Logout</button>
+              </form>
+            </li>
           {% else %}
             <li class="nav-item"><a class="nav-link" href="{% url 'login' %}">Login</a></li>
             <li class="nav-item"><a class="nav-link" href="{% url 'register' %}">Register</a></li>
@@ -38,7 +43,9 @@
   </nav>
   
   <div class="container my-4">
-    {% block content %}{% endblock %}
+    {% block content %}
+    
+    {% endblock %}
   </div>
   
   <!-- Bootstrap JS Bundle -->

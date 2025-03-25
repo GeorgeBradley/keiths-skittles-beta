@@ -5,6 +5,15 @@
 <div class="container my-5">
   <h1>Game Statistics for {{ game }}</h1>
   
+  {% if overall_result %}
+    <h3 style="color: {{ overall_result.color }};">
+      Overall Result: {{ overall_result.result }} ({{ own_total }} - {{ opp_total }})
+    </h3>
+  {% else %}
+    <h3>Overall Result Not Available</h3>
+  {% endif %}
+  
+  <!-- Cycle Totals -->
   <h3>Cycle Totals</h3>
   <table class="table table-striped">
     <thead class="table-dark">
@@ -27,6 +36,7 @@
     </tbody>
   </table>
   
+  <!-- Round Totals -->
   <h3>Round Totals</h3>
   <table class="table table-striped">
     <thead class="table-dark">
@@ -49,55 +59,73 @@
     </tbody>
   </table>
   
-  <div class="row">
-    <div class="col-md-6">
-      <h3>Own Team Player Totals</h3>
-      <table class="table table-striped">
-        <thead class="table-dark">
+  <!-- Player Totals (Team Comparison) -->
+  <h3>Player Totals (Team Comparison)</h3>
+  <table class="table table-striped">
+    <thead class="table-dark">
+      <tr>
+        <th>Own Team Player</th>
+        <th>Own Score</th>
+        <th>Opposing Team Player</th>
+        <th>Opp Score</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if zipped_totals %}
+        {% for own, opp in zipped_totals %}
           <tr>
-            <th>Player</th>
-            <th>Total Score</th>
+            <td>{{ own.player__name }}</td>
+            <td>{{ own.player_total }}</td>
+            <td>{{ opp.player__name }}</td>
+            <td>{{ opp.player_total }}</td>
           </tr>
-        </thead>
-        <tbody>
-          {% for item in own_totals %}
-            <tr>
-              <td>{{ item.player_name }}</td>
-              <td>{{ item.player_total }}</td>
-            </tr>
-          {% empty %}
-            <tr>
-              <td colspan="2" class="text-center">No own team scores recorded yet.</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <div class="col-md-6">
-      <h3>Opposing Team Player Totals</h3>
-      <table class="table table-striped">
-        <thead class="table-dark">
-          <tr>
-            <th>Player</th>
-            <th>Total Score</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for item in opp_totals %}
-            <tr>
-              <td>{{ item.player_name }}</td>
-              <td>{{ item.player_total }}</td>
-            </tr>
-          {% empty %}
-            <tr>
-              <td colspan="2" class="text-center">No opposing team scores recorded yet.</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="4" class="text-center">No player totals available yet.</td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
   
+  <!-- Detailed Player Stats -->
+  <h3>Detailed Player Stats</h3>
+  <table class="table table-striped">
+    <thead class="table-dark">
+      <tr>
+        <th>Player</th>
+        <th>Total Score</th>
+        <th># Cycles</th>
+        <th>Average per Cycle</th>
+        <th>Highest Scorer</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for player in player_stats %}
+        <tr {% if highest_scorers and player.player__id in highest_scorers %}class="table-success"{% endif %}>
+          <td>{{ player.player__name }}</td>
+          <td>{{ player.total_score }}</td>
+          <td>{{ player.num_cycles }}</td>
+          <td>{{ player.average|floatformat:2 }}</td>
+          <td>
+            {% if highest_scorers and player.player__id in highest_scorers %}
+              {% if highest_scorers|length > 1 %}
+                ★ (Tie)
+              {% else %}
+                ★
+              {% endif %}
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr>
+          <td colspan="5" class="text-center">No player statistics available yet.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  
+  <!-- Score Differentials by Round -->
   <h3>Score Differentials by Round</h3>
   <table class="table table-striped">
     <thead class="table-dark">

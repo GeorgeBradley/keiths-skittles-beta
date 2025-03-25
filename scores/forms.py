@@ -10,8 +10,9 @@ class GameSetupForm(forms.ModelForm):
         widgets = {
             "date": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
             "opponent": forms.TextInput(attrs={"class": "form-control"}),
-            "location": forms.TextInput(attrs={"class": "form-control"}),
-            "game_type": forms.TextInput(attrs={"class": "form-control"}),
+            # Use Select widgets so the admin picks from existing entries.
+            "location": forms.Select(attrs={"class": "form-select"}),
+            "game_type": forms.Select(attrs={"class": "form-select"}),
             "cycles_per_round": forms.NumberInput(attrs={
                 "class": "form-control",
                 "min": 1,
@@ -22,8 +23,11 @@ class GameSetupForm(forms.ModelForm):
             "cycles_per_round": "Cycles per Round",
         }
         help_texts = {
-            "cycles_per_round": "This is the number of complete cycles. Each cycle means that every player on each team takes one turn. For example, if you have 4 players, 4 cycles equal 16 total turns per team.",
+            "cycles_per_round": ("This is the number of complete cycles. Each cycle means that every "
+                                 "player on each team takes one turn. For example, if you have 4 players, "
+                                 "4 cycles equal 16 total turns per team."),
         }
+
 class PlayerForm(forms.ModelForm):
     class Meta:
         model = Player
@@ -32,7 +36,6 @@ class PlayerForm(forms.ModelForm):
             "name": forms.TextInput(attrs={"class": "form-control", "placeholder": "Player name"}),
         }
 
-# Updated GamePlayerForm: only displays the 'player' field.
 class GamePlayerForm(forms.ModelForm):
     class Meta:
         model = GamePlayer
@@ -43,10 +46,9 @@ class GamePlayerForm(forms.ModelForm):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Exclude players whose names start with "Opp." (auto-generated opponents)
+        # Only include players who are not auto-generated as opponents.
         self.fields["player"].queryset = Player.objects.exclude(name__startswith="Opp.")
 
-# Use the updated GamePlayerForm in the formset.
 GamePlayerFormSet = modelformset_factory(
     GamePlayer,
     form=GamePlayerForm,
@@ -64,7 +66,6 @@ class ScoreForm(forms.ModelForm):
             "roll3": forms.NumberInput(attrs={"class": "form-control", "min": 0}),
         }
 
-# New form for round-specific options:
 class RoundOptionsForm(forms.Form):
     team_first_round = forms.ChoiceField(
         choices=(("own", "Own Team"), ("opp", "Opposing Team")),
