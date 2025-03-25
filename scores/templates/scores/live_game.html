@@ -1,0 +1,61 @@
+{% extends "scores/base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="container my-4">
+  <h1>Live Game: {{ game }}</h1>
+  <div class="mb-3">
+    <h4>{{ message }}</h4>
+    {% if plus_minus != None %}
+      <p class="lead">
+        Score Differential: <strong>
+          {% if plus_minus > 0 %}
+            +{{ plus_minus }} (Your Team Ahead)
+          {% elif plus_minus < 0 %}
+            {{ plus_minus }} (Opponents Ahead)
+          {% else %}
+            0 (Tied)
+          {% endif %}
+        </strong>
+      </p>
+    {% endif %}
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    {{ score_form.as_p }}
+    <button type="submit" name="enter_score" class="btn btn-success">Submit Score</button>
+  </form>
+
+  <hr>
+  <h3>Scoreboard (Round 1)</h3>
+  {% if scores %}
+    <table class="table table-striped">
+      <thead class="table-dark">
+        <tr>
+          <th>Player</th>
+          <th>Cycle</th>
+          <th>Rolls</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for score in scores %}
+          <tr>
+            <td>{{ score.player.name }}</td>
+            <td>{{ score.cycle_number }}</td>
+            <td>
+              {% if score.roll1 %}{{ score.roll1 }}{% endif %}
+              {% if score.roll2 %}, {{ score.roll2 }}{% endif %}
+              {% if score.roll3 %}, {{ score.roll3 }}{% endif %}
+            </td>
+            <td>{{ score.total }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No scores recorded yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

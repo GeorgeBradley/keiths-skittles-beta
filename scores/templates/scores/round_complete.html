@@ -1,0 +1,12 @@
+{% extends "scores/base.html" %}
+{% block content %}
+<div class="container my-5 text-center">
+  <h1>Round Complete!</h1>
+  <p>What would you like to do next?</p>
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" name="next_round" class="btn btn-success me-3">Start Next Round</button>
+    <button type="submit" name="end_game" class="btn btn-danger">End Game</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "scores/base.html" %}
+{% block content %}
+<h2>{{ prompt }}</h2>
+<form method="post" class="mt-3">
+    {% csrf_token %}
+    <div class="mb-3">
+        <label for="roll1" class="form-label">Roll 1:</label>
+        <input type="number" name="roll1" id="roll1" class="form-control" min="0" required>
+    </div>
+    <div class="mb-3">
+        <label for="roll2" class="form-label">Roll 2:</label>
+        <input type="number" name="roll2" id="roll2" class="form-control" min="0" required>
+    </div>
+    <div class="mb-3">
+        <label for="roll3" class="form-label">Roll 3:</label>
+        <input type="number" name="roll3" id="roll3" class="form-control" min="0" required>
+    </div>
+    <button type="submit" class="btn btn-primary">Submit Score</button>
+</form>
+{% endblock %}

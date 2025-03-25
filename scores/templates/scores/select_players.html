@@ -1,0 +1,37 @@
+{% extends "scores/base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="container my-4">
+  <h1>Select Your Team for Round 1</h1>
+  <p class="text-muted">
+    Enter the players for your team in the order you wish them to play.
+    Then, choose which team goes first for this round.
+  </p>
+  <form method="post">
+    {% csrf_token %}
+    {{ formset.management_form }}
+    <table class="table table-bordered">
+      <thead class="table-dark">
+        <tr>
+          <th>Player</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for form in formset %}
+          <tr>
+            <td>{{ form.player }}</td>
+            {{ form.team.as_hidden }}
+            {{ form.round_number.as_hidden }}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="mb-3">
+      {{ round_options_form.team_first_round.label_tag }}
+      {{ round_options_form.team_first_round }}
+    </div>
+    <button type="submit" name="select_players" class="btn btn-primary">Save Players</button>
+  </form>
+</div>
+{% endblock %}

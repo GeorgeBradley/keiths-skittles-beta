@@ -1,0 +1,24 @@
+{% extends "scores/base.html" %}
+{% load static %}
+
+{% block content %}
+<div class="container my-4">
+  <h1>Add a New Player</h1>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit" class="btn btn-primary">Add Player</button>
+  </form>
+  <hr>
+  <h3>Existing Players</h3>
+  {% if players %}
+    <ul class="list-group">
+      {% for player in players %}
+        <li class="list-group-item">{{ player.name }}</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No players added yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
