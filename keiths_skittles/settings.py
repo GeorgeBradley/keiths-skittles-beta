@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
+
 SECRET_KEY = os.environ.get("SECRET_KEY", "your-dev-secret-key")
 DEBUG = os.environ.get("DEBUG", "True") == "True"
 
@@ -54,7 +55,7 @@ TEMPLATES = [
     },
 ]
 
-# ASGI application for Channels
+# ASGI application for Channels.
 ASGI_APPLICATION = "keiths_skittles.asgi.application"
 
 # Channels configuration: using the in-memory layer for development.
@@ -90,5 +91,5 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Login settings
-LOGIN_REDIRECT_URL = "start_game"  # or another view as default
+LOGIN_REDIRECT_URL = "start_game"
 LOGOUT_REDIRECT_URL = "login"
