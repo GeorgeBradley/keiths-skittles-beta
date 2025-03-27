@@ -1,6 +1,6 @@
+
 import json
 from django.shortcuts import render, redirect, get_object_or_404
-# Add Case and When here
 from django.db.models import Sum, Max, Min, Count, F, FloatField, ExpressionWrapper, Case, When, Value, Q, Avg
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import JsonResponse
@@ -8,7 +8,10 @@ from django.urls import reverse
 from django.db.models.functions import Coalesce
 from django.views.decorators.http import require_POST
 
-from .models import Game, Player, GamePlayer, Score, Opponent, Location
+# --- CORRECTED IMPORT ---
+from .models import Game, Player, GamePlayer, Score, Opponent, Location, GameType # Added GameType
+# --- END CORRECTION ---
+
 from .forms import (
     GameSetupForm,
     ScoreForm,
@@ -16,15 +19,14 @@ from .forms import (
     PlayerForm,
     RoundOptionsForm
 )
-# --- Helper function for Game State ---
+# --- Helper function for Game State (Keep as is) ---
 def get_game_state(game, current_round, request):
-    # (Your existing logic - should correctly return round_complete=True when appropriate)
+    # ... (your existing get_game_state logic) ...
     own_team = list(game.game_players.filter(round_number=current_round, team="own").order_by("id"))
     opp_team = list(game.game_players.filter(round_number=current_round, team="opp").order_by("id"))
     round_team_first_key = f"round_{current_round}_team_first"
     round_team_first = request.session.get(round_team_first_key, request.session.get("round_team_first", "own"))
     scoring_order = []
-    # ... (logic to build scoring_order) ...
     if round_team_first == "own":
         for i in range(max(len(own_team), len(opp_team))):
             if i < len(own_team): scoring_order.append(own_team[i])
@@ -33,7 +35,6 @@ def get_game_state(game, current_round, request):
         for i in range(max(len(own_team), len(opp_team))):
             if i < len(opp_team): scoring_order.append(opp_team[i])
             if i < len(own_team): scoring_order.append(own_team[i])
-
     total_turns = len(scoring_order)
     if total_turns == 0: return {"message": f"Set up teams for Round {current_round}.", "current_player": None, "current_player_obj": None, "current_cycle": 1, "plus_minus": 0, "scores_data": [], "scores_qs": Score.objects.none(), "round_complete": False, "error": "No players found..."}
     scores_entered = Score.objects.filter(game=game, round_number=current_round).count()
@@ -53,60 +54,32 @@ def get_game_state(game, current_round, request):
     plus_minus = own_total - opp_total
     scores_qs = game.scores.filter(round_number=current_round).order_by("cycle_number", "id")
     scores_data = list(scores_qs.values('player__name', 'cycle_number', 'roll1', 'roll2', 'roll3', 'total', 'id'))
+    # The second return statement here is unreachable code and can be removed
+    # return { ... }
     return {"message": message, "current_player": current_player, "current_player_obj": current_player_obj, "current_cycle": current_cycle, "plus_minus": plus_minus, "scores_data": scores_data, "scores_qs": scores_qs, "round_complete": round_complete, "error": None}
-
-    return {
-        "message": message,
-        "current_player": current_player, # The Player instance
-        "current_player_obj": current_player_obj, # The GamePlayer instance (needed to get player on POST)
-        "current_cycle": current_cycle,
-        "plus_minus": plus_minus,
-        "scores_data": scores_data, # Use the serializable list
-        "scores_qs": scores_qs, # Keep queryset for template context (initial load)
-        "round_complete": round_complete,
-        "error": None # Or set an error message if needed
-    }
 # --- End Helper Function ---
-
 
 @staff_member_required
 def start_game(request):
     if request.method == "POST":
-        # --- POST request handling (unchanged) ---
         form = GameSetupForm(request.POST)
         if form.is_valid():
             game = form.save()
-            # Use game-specific session keys
             request.session[f"game_{game.id}_current_round"] = 1
-            # Clear previous team first settings if any
-            request.session.pop("round_team_first", None) # Clear old general key
-            for i in range(1, 10): # Clear potential old round-specific keys
+            request.session.pop("round_team_first", None)
+            for i in range(1, 10):
                 request.session.pop(f"round_{i}_team_first", None)
             return redirect("live_game", game_id=game.id)
-        # If form is invalid on POST, it will fall through and re-render below
-        # including the forced evaluation.
-
-    else: # --- GET request handling ---
+    else:
         form = GameSetupForm()
 
-    # --- FORCE QUERYSET EVALUATION for Choice Fields BEFORE rendering ---
-    # Accessing the choices or iterating forces the database query to complete now,
-    # preventing potential cursor issues during template rendering, especially with poolers.
-    # We assign to dummy variables '_' as we don't need the results here.
     try:
         _ = list(form.fields['opponent'].queryset)
         _ = list(form.fields['location'].queryset)
         _ = list(form.fields['game_type'].queryset)
     except Exception as e:
-        # Handle potential errors during queryset evaluation (e.g., DB connection)
-        # You might want to log this error or add a message
         print(f"Error evaluating form querysets in start_game view: {e}")
-        # Optionally add an error message to the context or raise an error
-        # For now, we'll let it proceed, but the dropdowns might be empty/fail
         pass
-    # --- END FORCE EVALUATION ---
-
-    # Pass the *same* form instance (which now has cached choices) to the template
     return render(request, "scores/start_game.html", {"form": form})
 
 
@@ -465,7 +438,6 @@ def game_detail(request, game_id):
      # Potentially show overview, links to stats, live game etc.
      return render(request, "scores/game_detail.html", {"game": game})
 
-@staff_member_required # Or @login_required
 def player_statistics(request):
     players = Player.objects.exclude(name__startswith="Opp.").order_by("name")
     selected_player = None
@@ -597,33 +569,11 @@ def ajax_add_location(request):
 
 
 
-# scores/views.py
-
-import json
-from django.shortcuts import render, get_object_or_404
-from django.db.models import Sum, Max, Min, Count, F, Q, Avg, FloatField, ExpressionWrapper, Case, When, Value
-from django.db.models.functions import Coalesce
-from django.contrib.admin.views.decorators import staff_member_required
-# Ensure require_POST is imported if used elsewhere, but not needed for this view
-# from django.views.decorators.http import require_POST
-from django.http import JsonResponse # Keep if used by AJAX views
-
-# Import all necessary models
-from .models import Game, Player, GamePlayer, Score, Opponent, Location, GameType
-# Import forms if needed by other views
-# from .forms import (...)
-
-
-# --- Keep other view functions (start_game, live_game, ajax_add_*, etc.) ---
-
-
-# --- UPDATED OPPONENT STATISTICS VIEW ---
-# Use login_required or staff_member_required as appropriate
-# @staff_member_required
+# --- opponent_statistics (SINGLE CORRECT VERSION) ---
 def opponent_statistics(request):
     # Data for dropdowns
     opponents = Opponent.objects.all().order_by('name')
-    game_types = GameType.objects.all().order_by('name')
+    game_types = GameType.objects.all().order_by('name') # Ensure GameType is imported
 
     # Selected filter values
     selected_opponent = None
@@ -638,481 +588,71 @@ def opponent_statistics(request):
     if opponent_id:
         try:
             selected_opponent = get_object_or_404(Opponent, id=opponent_id)
-
-            # --- Base Query ---
             games_query = Game.objects.filter(opponent=selected_opponent)
 
-            # --- Apply GameType Filter (if provided and valid) ---
             if game_type_id:
                 try:
                     selected_game_type = GameType.objects.get(id=game_type_id)
                     games_query = games_query.filter(game_type=selected_game_type)
-                except (GameType.DoesNotExist, ValueError, TypeError): # Catch potential errors
-                    # Invalid ID passed, ignore filter
-                    selected_game_type = None
-                    game_type_id = None # Clear invalid ID
+                except (GameType.DoesNotExist, ValueError, TypeError):
+                    selected_game_type = None; game_type_id = None
 
-            # --- Execute Query ---
             games_vs_opponent = games_query.order_by('date').select_related('location', 'game_type')
             game_ids = list(games_vs_opponent.values_list('id', flat=True))
 
-            # --- Check if any games match criteria ---
             if not game_ids:
                 stats['error'] = "No games found matching the selected criteria."
             else:
                 stats['total_games'] = len(game_ids)
-
-                # --- Prepare data for efficient calculation ---
-                all_scores_in_games = Score.objects.filter(game_id__in=game_ids).select_related('player') # Don't need game__location here
+                all_scores_in_games = Score.objects.filter(game_id__in=game_ids).select_related('player')
                 all_game_players = GamePlayer.objects.filter(game_id__in=game_ids).select_related('player')
+                game_results = []; own_total_score_all_games = 0; opp_total_score_all_games = 0; wins = 0; losses = 0; draws = 0; score_diffs_by_date = []; scores_by_location = {}
 
-                # --- Initialize aggregates and lists ---
-                game_results = [] # Holds per-game calculated results
-                own_total_score_all_games = 0
-                opp_total_score_all_games = 0
-                wins = 0
-                losses = 0
-                draws = 0
-                score_diffs_by_date = [] # For chart
-                scores_by_location = {} # {loc_name: {'wins':0, ...}}
-
-                # --- Loop through filtered games to calculate per-game stats ---
                 for game in games_vs_opponent:
                     own_ids_game = list(all_game_players.filter(game=game, team='own').values_list('player_id', flat=True))
                     opp_ids_game = list(all_game_players.filter(game=game, team='opp').values_list('player_id', flat=True))
-
                     own_total_game = all_scores_in_games.filter(game=game, player_id__in=own_ids_game).aggregate(total=Coalesce(Sum('total'), 0))['total']
                     opp_total_game = all_scores_in_games.filter(game=game, player_id__in=opp_ids_game).aggregate(total=Coalesce(Sum('total'), 0))['total']
-
-                    # Aggregate totals
-                    own_total_score_all_games += own_total_game
-                    opp_total_score_all_games += opp_total_game
+                    own_total_score_all_games += own_total_game; opp_total_score_all_games += opp_total_game
                     score_diff = own_total_game - opp_total_game
-
-                    # Determine result and count W/L/D
-                    result = "Draw"
+                    result = "Draw";
                     if score_diff > 0: wins += 1; result = "Win"
                     elif score_diff < 0: losses += 1; result = "Loss"
                     else: draws += 1
-
-                    # Store results for potential later use (or remove if not needed)
-                    game_results.append({
-                        'game': game,
-                        'own_score': own_total_game,
-                        'opp_score': opp_total_game,
-                        'diff': score_diff,
-                        'result': result,
-                    })
-
-                    # Data for trend chart
+                    game_results.append({'game': game, 'own_score': own_total_game, 'opp_score': opp_total_game, 'diff': score_diff, 'result': result})
                     score_diffs_by_date.append({'date': game.date, 'diff': score_diff})
-
-                    # Data for location breakdown
-                    loc_name = game.location.name if game.location else "Unknown Location"
-                    if loc_name not in scores_by_location:
-                        scores_by_location[loc_name] = {'wins': 0, 'losses': 0, 'draws': 0, 'diff_sum': 0, 'count': 0}
-                    scores_by_location[loc_name]['count'] += 1
-                    scores_by_location[loc_name]['diff_sum'] += score_diff
+                    loc_name = game.location.name if game.location else "Unknown Location";
+                    if loc_name not in scores_by_location: scores_by_location[loc_name] = {'wins': 0, 'losses': 0, 'draws': 0, 'diff_sum': 0, 'count': 0}
+                    scores_by_location[loc_name]['count'] += 1; scores_by_location[loc_name]['diff_sum'] += score_diff
                     if result == "Win": scores_by_location[loc_name]['wins'] += 1
                     elif result == "Loss": scores_by_location[loc_name]['losses'] += 1
                     else: scores_by_location[loc_name]['draws'] += 1
 
-                # --- Calculate Overall Statistics ---
-
-                # 1. Head-to-Head Record
-                stats['wins'] = wins
-                stats['losses'] = losses
-                stats['draws'] = draws
+                stats['wins'] = wins; stats['losses'] = losses; stats['draws'] = draws
                 stats['win_percentage'] = (wins / stats['total_games'] * 100) if stats['total_games'] > 0 else 0
-
-                # 2. Scoring Performance (Averages, High/Low)
                 stats['avg_score_for'] = (own_total_score_all_games / stats['total_games']) if stats['total_games'] > 0 else 0
                 stats['avg_score_against'] = (opp_total_score_all_games / stats['total_games']) if stats['total_games'] > 0 else 0
                 stats['avg_score_diff'] = stats['avg_score_for'] - stats['avg_score_against']
+                game_scores_for = [g['own_score'] for g in game_results]; game_scores_against = [g['opp_score'] for g in game_results]
+                stats['highest_score_for'] = max(game_scores_for) if game_scores_for else 0; stats['lowest_score_for'] = min(game_scores_for) if game_scores_for else 0
+                stats['highest_score_against'] = max(game_scores_against) if game_scores_against else 0; stats['lowest_score_against'] = min(game_scores_against) if game_scores_against else 0
 
-                game_scores_for = [g['own_score'] for g in game_results]
-                game_scores_against = [g['opp_score'] for g in game_results]
-                stats['highest_score_for'] = max(game_scores_for) if game_scores_for else 0
-                stats['lowest_score_for'] = min(game_scores_for) if game_scores_for else 0
-                stats['highest_score_against'] = max(game_scores_against) if game_scores_against else 0
-                stats['lowest_score_against'] = min(game_scores_against) if game_scores_against else 0
+                if score_diffs_by_date: chart_data = {'labels': [item['date'].strftime('%Y-%m-%d') for item in score_diffs_by_date], 'data': [item['diff'] for item in score_diffs_by_date]}; chart_data_json = json.dumps(chart_data)
 
-                # 3. Performance Trend Data (Chart)
-                if score_diffs_by_date:
-                     chart_data = {
-                         'labels': [item['date'].strftime('%Y-%m-%d') for item in score_diffs_by_date],
-                         'data': [item['diff'] for item in score_diffs_by_date]
-                     }
-                     chart_data_json = json.dumps(chart_data)
-
-                # 4. Performance by Location
-                location_stats = []
-                for loc_name, data in sorted(scores_by_location.items()):
-                    avg_diff_loc = (data['diff_sum'] / data['count']) if data['count'] > 0 else 0
-                    location_stats.append({
-                        'name': loc_name,
-                        'wins': data['wins'],
-                        'losses': data['losses'],
-                        'draws': data['draws'],
-                        'count': data['count'],
-                        'avg_diff': avg_diff_loc
-                    })
+                location_stats = [];
+                for loc_name, data in sorted(scores_by_location.items()): avg_diff_loc = (data['diff_sum'] / data['count']) if data['count'] > 0 else 0; location_stats.append({'name': loc_name, 'wins': data['wins'], 'losses': data['losses'], 'draws': data['draws'], 'count': data['count'], 'avg_diff': avg_diff_loc})
                 stats['location_stats'] = location_stats
 
-                # 6. Top Performing "Own" Players vs This Opponent (in these filtered games)
                 own_player_ids_in_games = all_game_players.filter(game_id__in=game_ids, team='own').values_list('player_id', flat=True).distinct()
-
-                top_players = list(all_scores_in_games.filter(
-                        game_id__in=game_ids, # Scores only from filtered games
-                        player_id__in=own_player_ids_in_games
-                    ).values('player__name')
-                     .annotate(
-                        total_score_vs_opp=Coalesce(Sum('total'), 0),
-                        cycle_count_vs_opp=Count('id')
-                     ).annotate(
-                        avg_score_vs_opp=ExpressionWrapper(
-                             Case(When(cycle_count_vs_opp=0, then=Value(0.0)),
-                                  default=F('total_score_vs_opp') * 1.0 / F('cycle_count_vs_opp')),
-                             output_field=FloatField()
-                         )
-                     ).order_by('-total_score_vs_opp') # Order by total score
-                )
+                top_players = list(all_scores_in_games.filter(game_id__in=game_ids, player_id__in=own_player_ids_in_games).values('player__name').annotate(total_score_vs_opp=Coalesce(Sum('total'), 0), cycle_count_vs_opp=Count('id')).annotate(avg_score_vs_opp=ExpressionWrapper( Case(When(cycle_count_vs_opp=0, then=Value(0.0)), default=F('total_score_vs_opp') * 1.0 / F('cycle_count_vs_opp')), output_field=FloatField())).order_by('-total_score_vs_opp'))
                 stats['top_players'] = top_players
 
-        # --- Error Handling ---
-        except Opponent.DoesNotExist:
-            stats['error'] = "Selected opponent not found."
-        except Exception as e:
-            # Log the detailed error to the console/logs
-            print(f"Error calculating opponent stats for ID {opponent_id}, GameType ID {game_type_id}: {e}")
-            # Provide a generic message to the user
-            stats['error'] = "An error occurred while calculating statistics."
-
-    # --- Prepare Context ---
-    context = {
-        'opponents': opponents,             # For opponent dropdown
-        'game_types': game_types,           # For game type dropdown
-        'selected_opponent': selected_opponent, # The opponent object, if selected
-        'selected_game_type': selected_game_type, # The game_type object, if selected
-        'stats': stats,                     # Dictionary containing calculated stats or error
-        'chart_data_json': chart_data_json, # Data for the trend chart
-    }
-    # --- Render Template ---
-    return render(request, 'scores/opponent_statistics.html', context)
-
-# ... rest of views ...
-    opponents = Opponent.objects.all().order_by('name')
-    selected_opponent = None
-    stats = {} # Dictionary to hold all calculated stats
-    chart_data_json = None # For the trend chart
-
-    opponent_id = request.GET.get('opponent_id')
-
-    if opponent_id:
-        try:
-            selected_opponent = get_object_or_404(Opponent, id=opponent_id)
-
-            # Filter games played against this opponent
-            games_vs_opponent = Game.objects.filter(opponent=selected_opponent).order_by('date')
-            game_ids = list(games_vs_opponent.values_list('id', flat=True))
-
-            if not game_ids:
-                stats['error'] = "No games found against this opponent."
-            else:
-                stats['total_games'] = len(game_ids)
-
-                # --- Calculate Stats ---
-                game_results = []
-                own_total_score_all_games = 0
-                opp_total_score_all_games = 0
-                wins = 0
-                losses = 0
-                draws = 0
-                score_diffs_by_date = [] # For chart
-                scores_by_location = {} # {location_name: {'wins': 0, 'losses': 0, 'draws': 0, 'diff_sum': 0, 'count': 0}}
-
-                # Pre-fetch scores for efficiency
-                all_scores_in_games = Score.objects.filter(game_id__in=game_ids).select_related('player', 'game__location')
-                # Pre-fetch game player assignments
-                all_game_players = GamePlayer.objects.filter(game_id__in=game_ids).select_related('player')
-
-                for game in games_vs_opponent.select_related('location'): # Include location here
-                    # Get player IDs for this specific game
-                    own_ids_game = list(all_game_players.filter(game=game, team='own').values_list('player_id', flat=True))
-                    opp_ids_game = list(all_game_players.filter(game=game, team='opp').values_list('player_id', flat=True))
-
-                    # Calculate scores for this game using pre-fetched scores
-                    own_total_game = all_scores_in_games.filter(game=game, player_id__in=own_ids_game).aggregate(total=Coalesce(Sum('total'), 0))['total']
-                    opp_total_game = all_scores_in_games.filter(game=game, player_id__in=opp_ids_game).aggregate(total=Coalesce(Sum('total'), 0))['total']
-
-                    own_total_score_all_games += own_total_game
-                    opp_total_score_all_games += opp_total_game
-                    score_diff = own_total_game - opp_total_game
-
-                    result = "Draw"
-                    if score_diff > 0:
-                        wins += 1
-                        result = "Win"
-                    elif score_diff < 0:
-                        losses += 1
-                        result = "Loss"
-                    else:
-                        draws += 1
-
-                    game_results.append({
-                        'game': game,
-                        'own_score': own_total_game,
-                        'opp_score': opp_total_game,
-                        'diff': score_diff,
-                        'result': result,
-                    })
-
-                    # Data for trend chart
-                    score_diffs_by_date.append({'date': game.date, 'diff': score_diff})
-
-                    # Data for location breakdown
-                    loc_name = game.location.name if game.location else "Unknown Location"
-                    if loc_name not in scores_by_location:
-                        scores_by_location[loc_name] = {'wins': 0, 'losses': 0, 'draws': 0, 'diff_sum': 0, 'count': 0}
-                    scores_by_location[loc_name]['count'] += 1
-                    scores_by_location[loc_name]['diff_sum'] += score_diff
-                    if result == "Win": scores_by_location[loc_name]['wins'] += 1
-                    elif result == "Loss": scores_by_location[loc_name]['losses'] += 1
-                    else: scores_by_location[loc_name]['draws'] += 1
-
-
-                # 1. Overall Head-to-Head
-                stats['wins'] = wins
-                stats['losses'] = losses
-                stats['draws'] = draws
-                stats['win_percentage'] = (wins / stats['total_games'] * 100) if stats['total_games'] > 0 else 0
-
-                # 2. Scoring Performance
-                stats['avg_score_for'] = (own_total_score_all_games / stats['total_games']) if stats['total_games'] > 0 else 0
-                stats['avg_score_against'] = (opp_total_score_all_games / stats['total_games']) if stats['total_games'] > 0 else 0
-                stats['avg_score_diff'] = stats['avg_score_for'] - stats['avg_score_against']
-
-                game_scores_for = [g['own_score'] for g in game_results]
-                game_scores_against = [g['opp_score'] for g in game_results]
-                stats['highest_score_for'] = max(game_scores_for) if game_scores_for else 0
-                stats['lowest_score_for'] = min(game_scores_for) if game_scores_for else 0
-                stats['highest_score_against'] = max(game_scores_against) if game_scores_against else 0
-                stats['lowest_score_against'] = min(game_scores_against) if game_scores_against else 0
-
-                # 3. Performance Trend Data (Chart)
-                if score_diffs_by_date:
-                     chart_data = {
-                         'labels': [item['date'].strftime('%Y-%m-%d') for item in score_diffs_by_date],
-                         'data': [item['diff'] for item in score_diffs_by_date]
-                     }
-                     chart_data_json = json.dumps(chart_data)
-
-                # 4. Performance by Location
-                location_stats = []
-                for loc_name, data in sorted(scores_by_location.items()):
-                    avg_diff_loc = (data['diff_sum'] / data['count']) if data['count'] > 0 else 0
-                    location_stats.append({
-                        'name': loc_name,
-                        'wins': data['wins'],
-                        'losses': data['losses'],
-                        'draws': data['draws'],
-                        'count': data['count'],
-                        'avg_diff': avg_diff_loc
-                    })
-                stats['location_stats'] = location_stats
-
-
-                # 6. Top Performing "Own" Players vs This Opponent
-                # Find IDs of players who played for 'own' team in these games
-                own_player_ids_in_games = all_game_players.filter(game_id__in=game_ids, team='own').values_list('player_id', flat=True).distinct()
-
-                # Aggregate scores for those players ONLY in games against this opponent
-                top_players = list(all_scores_in_games.filter(
-                        game_id__in=game_ids,
-                        player_id__in=own_player_ids_in_games # Only 'own' team players
-                    ).values('player__name') # Group by player name
-                     .annotate(
-                        total_score_vs_opp=Coalesce(Sum('total'), 0),
-                        cycle_count_vs_opp=Count('id') # Count score entries (cycles)
-                     ).annotate(
-                        avg_score_vs_opp=ExpressionWrapper( # Calculate average
-                             Case(When(cycle_count_vs_opp=0, then=Value(0.0)),
-                                  default=F('total_score_vs_opp') * 1.0 / F('cycle_count_vs_opp')),
-                             output_field=FloatField()
-                         )
-                     ).order_by('-total_score_vs_opp') # Order by total score descending
-                )
-                stats['top_players'] = top_players
-
-
-        except Opponent.DoesNotExist:
-            stats['error'] = "Selected opponent not found."
-        except Exception as e:
-            print(f"Error calculating opponent stats for ID {opponent_id}: {e}") # Log error
-            stats['error'] = "An error occurred while calculating statistics."
+        except Opponent.DoesNotExist: stats['error'] = "Selected opponent not found."
+        except Exception as e: print(f"Error calculating opponent stats for ID {opponent_id}, GameType ID {game_type_id}: {e}"); stats['error'] = "An error occurred while calculating statistics."
 
     context = {
-        'opponents': opponents,
-        'selected_opponent': selected_opponent,
-        'stats': stats,
-        'chart_data_json': chart_data_json,
-    }
-    return render(request, 'scores/opponent_statistics.html', context)
-
-    opponents = Opponent.objects.all().order_by('name')
-    selected_opponent = None
-    stats = {} # Dictionary to hold all calculated stats
-    chart_data_json = None # For the trend chart
-
-    opponent_id = request.GET.get('opponent_id')
-
-    if opponent_id:
-        try:
-            selected_opponent = get_object_or_404(Opponent, id=opponent_id)
-
-            # Filter games played against this opponent
-            games_vs_opponent = Game.objects.filter(opponent=selected_opponent).order_by('date')
-            game_ids = list(games_vs_opponent.values_list('id', flat=True))
-
-            if not game_ids:
-                stats['error'] = "No games found against this opponent."
-            else:
-                stats['total_games'] = len(game_ids)
-
-                # --- Calculate Stats ---
-                game_results = []
-                own_total_score_all_games = 0
-                opp_total_score_all_games = 0
-                wins = 0
-                losses = 0
-                draws = 0
-                score_diffs_by_date = [] # For chart
-                scores_by_location = {} # {location_name: {'wins': 0, 'losses': 0, 'draws': 0, 'diff_sum': 0, 'count': 0}}
-
-                # Pre-fetch scores for efficiency
-                all_scores_in_games = Score.objects.filter(game_id__in=game_ids).select_related('player', 'game__location')
-                # Pre-fetch game player assignments
-                all_game_players = GamePlayer.objects.filter(game_id__in=game_ids).select_related('player')
-
-                for game in games_vs_opponent.select_related('location'): # Include location here
-                    # Get player IDs for this specific game
-                    own_ids_game = list(all_game_players.filter(game=game, team='own').values_list('player_id', flat=True))
-                    opp_ids_game = list(all_game_players.filter(game=game, team='opp').values_list('player_id', flat=True))
-
-                    # Calculate scores for this game using pre-fetched scores
-                    own_total_game = all_scores_in_games.filter(game=game, player_id__in=own_ids_game).aggregate(total=Coalesce(Sum('total'), 0))['total']
-                    opp_total_game = all_scores_in_games.filter(game=game, player_id__in=opp_ids_game).aggregate(total=Coalesce(Sum('total'), 0))['total']
-
-                    own_total_score_all_games += own_total_game
-                    opp_total_score_all_games += opp_total_game
-                    score_diff = own_total_game - opp_total_game
-
-                    result = "Draw"
-                    if score_diff > 0:
-                        wins += 1
-                        result = "Win"
-                    elif score_diff < 0:
-                        losses += 1
-                        result = "Loss"
-                    else:
-                        draws += 1
-
-                    game_results.append({
-                        'game': game,
-                        'own_score': own_total_game,
-                        'opp_score': opp_total_game,
-                        'diff': score_diff,
-                        'result': result,
-                    })
-
-                    # Data for trend chart
-                    score_diffs_by_date.append({'date': game.date, 'diff': score_diff})
-
-                    # Data for location breakdown
-                    loc_name = game.location.name if game.location else "Unknown Location"
-                    if loc_name not in scores_by_location:
-                        scores_by_location[loc_name] = {'wins': 0, 'losses': 0, 'draws': 0, 'diff_sum': 0, 'count': 0}
-                    scores_by_location[loc_name]['count'] += 1
-                    scores_by_location[loc_name]['diff_sum'] += score_diff
-                    if result == "Win": scores_by_location[loc_name]['wins'] += 1
-                    elif result == "Loss": scores_by_location[loc_name]['losses'] += 1
-                    else: scores_by_location[loc_name]['draws'] += 1
-
-
-                # 1. Overall Head-to-Head
-                stats['wins'] = wins
-                stats['losses'] = losses
-                stats['draws'] = draws
-                stats['win_percentage'] = (wins / stats['total_games'] * 100) if stats['total_games'] > 0 else 0
-
-                # 2. Scoring Performance
-                stats['avg_score_for'] = (own_total_score_all_games / stats['total_games']) if stats['total_games'] > 0 else 0
-                stats['avg_score_against'] = (opp_total_score_all_games / stats['total_games']) if stats['total_games'] > 0 else 0
-                stats['avg_score_diff'] = stats['avg_score_for'] - stats['avg_score_against']
-
-                game_scores_for = [g['own_score'] for g in game_results]
-                game_scores_against = [g['opp_score'] for g in game_results]
-                stats['highest_score_for'] = max(game_scores_for) if game_scores_for else 0
-                stats['lowest_score_for'] = min(game_scores_for) if game_scores_for else 0
-                stats['highest_score_against'] = max(game_scores_against) if game_scores_against else 0
-                stats['lowest_score_against'] = min(game_scores_against) if game_scores_against else 0
-
-                # 3. Performance Trend Data (Chart)
-                if score_diffs_by_date:
-                     chart_data = {
-                         'labels': [item['date'].strftime('%Y-%m-%d') for item in score_diffs_by_date],
-                         'data': [item['diff'] for item in score_diffs_by_date]
-                     }
-                     chart_data_json = json.dumps(chart_data)
-
-                # 4. Performance by Location
-                location_stats = []
-                for loc_name, data in sorted(scores_by_location.items()):
-                    avg_diff_loc = (data['diff_sum'] / data['count']) if data['count'] > 0 else 0
-                    location_stats.append({
-                        'name': loc_name,
-                        'wins': data['wins'],
-                        'losses': data['losses'],
-                        'draws': data['draws'],
-                        'count': data['count'],
-                        'avg_diff': avg_diff_loc
-                    })
-                stats['location_stats'] = location_stats
-
-
-                # 6. Top Performing "Own" Players vs This Opponent
-                # Find IDs of players who played for 'own' team in these games
-                own_player_ids_in_games = all_game_players.filter(game_id__in=game_ids, team='own').values_list('player_id', flat=True).distinct()
-
-                # Aggregate scores for those players ONLY in games against this opponent
-                top_players = list(all_scores_in_games.filter(
-                        game_id__in=game_ids,
-                        player_id__in=own_player_ids_in_games # Only 'own' team players
-                    ).values('player__name') # Group by player name
-                     .annotate(
-                        total_score_vs_opp=Coalesce(Sum('total'), 0),
-                        cycle_count_vs_opp=Count('id') # Count score entries (cycles)
-                     ).annotate(
-                        avg_score_vs_opp=ExpressionWrapper( # Calculate average
-                             Case(When(cycle_count_vs_opp=0, then=Value(0.0)),
-                                  default=F('total_score_vs_opp') * 1.0 / F('cycle_count_vs_opp')),
-                             output_field=FloatField()
-                         )
-                     ).order_by('-total_score_vs_opp') # Order by total score descending
-                )
-                stats['top_players'] = top_players
-
-
-        except Opponent.DoesNotExist:
-            stats['error'] = "Selected opponent not found."
-        except Exception as e:
-            print(f"Error calculating opponent stats for ID {opponent_id}: {e}") # Log error
-            stats['error'] = "An error occurred while calculating statistics."
-
-    context = {
-        'opponents': opponents,
-        'selected_opponent': selected_opponent,
-        'stats': stats,
-        'chart_data_json': chart_data_json,
+        'opponents': opponents, 'game_types': game_types,
+        'selected_opponent': selected_opponent, 'selected_game_type': selected_game_type,
+        'stats': stats, 'chart_data_json': chart_data_json,
     }
     return render(request, 'scores/opponent_statistics.html', context)
