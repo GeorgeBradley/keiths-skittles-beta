@@ -7,6 +7,6 @@ urlpatterns = [
     path("", past_games, name="past_games"),
     path("admin/", admin.site.urls),
     path("accounts/", include("users.urls")),
-    path("live/", include("scores.urls")),
+    path('', include('scores.urls')), # Include scores URLs at the root
     path("delete/<int:game_id>/", delete_game, name="delete_game"),
 ]
