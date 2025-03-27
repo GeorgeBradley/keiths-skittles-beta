@@ -465,6 +465,7 @@ def game_detail(request, game_id):
      # Potentially show overview, links to stats, live game etc.
      return render(request, "scores/game_detail.html", {"game": game})
 
+@staff_member_required # Or @login_required
 def player_statistics(request):
     players = Player.objects.exclude(name__startswith="Opp.").order_by("name")
     selected_player = None
