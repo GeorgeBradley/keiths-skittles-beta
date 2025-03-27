@@ -3,153 +3,217 @@
 
 {% block content %}
 <div class="container my-5">
-  <h1>Game Statistics for {{ game }}</h1>
-  
+  <h1 class="mb-4">Game Statistics for {{ game }}</h1>
+
+  <!-- Overall Result Card -->
   {% if overall_result %}
-    <h3 style="color: {{ overall_result.color }};">
-      Overall Result: {{ overall_result.result }} ({{ own_total }} - {{ opp_total }})
-    </h3>
+    <div class="card mb-4 text-center shadow-sm" style="background-color: {% if overall_result.result == 'Win' %}#d1e7dd{% elif overall_result.result == 'Loss' %}#f8d7da{% else %}#e2e3e5{% endif %}; border-color: {% if overall_result.result == 'Win' %}#badbcc{% elif overall_result.result == 'Loss' %}#f5c2c7{% else %}#d3d6d8{% endif %};">
+      <div class="card-body">
+        <h3 class="card-title mb-1" style="color: {% if overall_result.result == 'Win' %}#0f5132{% elif overall_result.result == 'Loss' %}#842029{% else %}#41464b{% endif %};">
+          Overall Result: {{ overall_result.result }}
+        </h3>
+        <p class="card-text lead" style="color: {% if overall_result.result == 'Win' %}#0f5132{% elif overall_result.result == 'Loss' %}#842029{% else %}#41464b{% endif %};">
+          ({{ own_total }} - {{ opp_total }})
+        </p>
+      </div>
+    </div>
   {% else %}
-    <h3>Overall Result Not Available</h3>
+    <div class="alert alert-secondary text-center" role="alert">
+      Overall Result Not Available Yet
+    </div>
   {% endif %}
-  
-  <!-- Cycle Totals -->
-  <h3>Cycle Totals</h3>
-  <table class="table table-striped">
-    <thead class="table-dark">
-      <tr>
-        <th>Cycle</th>
-        <th>Total Score</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for cycle in cycle_totals %}
-        <tr>
-          <td>{{ cycle.cycle_number }}</td>
-          <td>{{ cycle.cycle_total }}</td>
-        </tr>
-      {% empty %}
-        <tr>
-          <td colspan="2" class="text-center">No cycle totals available yet.</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  
-  <!-- Round Totals -->
-  <h3>Round Totals</h3>
-  <table class="table table-striped">
-    <thead class="table-dark">
-      <tr>
-        <th>Round</th>
-        <th>Total Score</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for round in round_totals %}
-        <tr>
-          <td>{{ round.round_number }}</td>
-          <td>{{ round.round_total }}</td>
-        </tr>
-      {% empty %}
-        <tr>
-          <td colspan="2" class="text-center">No round totals available yet.</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  
-  <!-- Player Totals (Team Comparison) -->
-  <h3>Player Totals (Team Comparison)</h3>
-  <table class="table table-striped">
-    <thead class="table-dark">
-      <tr>
-        <th>Own Team Player</th>
-        <th>Own Score</th>
-        <th>Opposing Team Player</th>
-        <th>Opp Score</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% if zipped_totals %}
-        {% for own, opp in zipped_totals %}
-          <tr>
-            <td>{{ own.player__name }}</td>
-            <td>{{ own.player_total }}</td>
-            <td>{{ opp.player__name }}</td>
-            <td>{{ opp.player_total }}</td>
-          </tr>
-        {% endfor %}
+
+  <div class="row">
+    <!-- Cycle Totals Card -->
+    <div class="col-md-6 mb-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-header">
+          <h3 class="mb-0">Cycle Totals</h3>
+        </div>
+        <div class="card-body p-0">
+          {% if cycle_totals %}
+          <div class="table-responsive">
+            <table class="table table-striped table-hover mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Cycle</th>
+                  <th class="text-end">Total Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for cycle in cycle_totals %}
+                  <tr>
+                    <td>{{ cycle.cycle_number }}</td>
+                    <td class="text-end">{{ cycle.cycle_total }}</td>
+                  </tr>
+                {% empty %}
+                  <tr><td colspan="2" class="text-center text-muted p-3">No cycle totals available yet.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+            <p class="text-center text-muted p-3">No cycle totals available yet.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Round Totals Card -->
+    <div class="col-md-6 mb-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-header">
+          <h3 class="mb-0">Round Totals</h3>
+        </div>
+        <div class="card-body p-0">
+          {% if round_totals %}
+          <div class="table-responsive">
+            <table class="table table-striped table-hover mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>Round</th>
+                  <th class="text-end">Total Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for round in round_totals %}
+                  <tr>
+                    <td>{{ round.round_number }}</td>
+                    <td class="text-end">{{ round.round_total }}</td>
+                  </tr>
+                 {% empty %}
+                  <tr><td colspan="2" class="text-center text-muted p-3">No round totals available yet.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+            <p class="text-center text-muted p-3">No round totals available yet.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Player Totals (Team Comparison) Card -->
+  <div class="card mb-4 shadow-sm">
+    <div class="card-header">
+      <h3 class="mb-0">Player Totals (Team Comparison)</h3>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-striped table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Own Team Player</th>
+              <th class="text-end">Own Score</th>
+              <th>Opposing Team Player</th>
+              <th class="text-end">Opp Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {# Loop through the pairs generated by the view #}
+            {% for pair in zipped_totals %}
+              <tr>
+                {# Use default filter to prevent errors if 'own' or 'opp' is None #}
+                <td>{{ pair.own.player__name|default:"-" }}</td>
+                <td class="text-end">{{ pair.own.player_total|default:"-" }}</td>
+                <td>{{ pair.opp.player__name|default:"-" }}</td>
+                <td class="text-end">{{ pair.opp.player_total|default:"-" }}</td>
+              </tr>
+            {% empty %}
+              {# This message shows if the zipped_totals list is empty #}
+              <tr>
+                <td colspan="4" class="text-center text-muted p-3">No player comparison data available yet.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detailed Player Stats Card -->
+  <div class="card mb-4 shadow-sm">
+    <div class="card-header">
+      <h3 class="mb-0">Detailed Player Stats</h3>
+    </div>
+    <div class="card-body p-0">
+      {% if player_stats %}
+      <div class="table-responsive">
+        <table class="table table-striped table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Player</th>
+              <th class="text-end">Total Score</th>
+              <th class="text-center"># Cycles</th>
+              <th class="text-end">Average / Cycle</th>
+              <th class="text-center">Highest Scorer</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for player in player_stats %}
+              <tr {% if highest_scorers and player.player__id in highest_scorers %}class="table-success"{% endif %}>
+                <td>{{ player.player__name }}</td>
+                <td class="text-end">{{ player.total_score }}</td>
+                <td class="text-center">{{ player.num_cycles }}</td>
+                <td class="text-end">{{ player.average|floatformat:2 }}</td>
+                <td class="text-center">
+                  {% if highest_scorers and player.player__id in highest_scorers %}
+                    <span class="fw-bold" title="Highest Scorer{% if highest_scorers|length > 1 %} (Tie){% endif %}">★</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% empty %}
+               <tr><td colspan="5" class="text-center text-muted p-3">No player statistics available yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
       {% else %}
-        <tr>
-          <td colspan="4" class="text-center">No player totals available yet.</td>
-        </tr>
+        <p class="text-center text-muted p-3">No player statistics available yet.</p>
       {% endif %}
-    </tbody>
-  </table>
-  
-  <!-- Detailed Player Stats -->
-  <h3>Detailed Player Stats</h3>
-  <table class="table table-striped">
-    <thead class="table-dark">
-      <tr>
-        <th>Player</th>
-        <th>Total Score</th>
-        <th># Cycles</th>
-        <th>Average per Cycle</th>
-        <th>Highest Scorer</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for player in player_stats %}
-        <tr {% if highest_scorers and player.player__id in highest_scorers %}class="table-success"{% endif %}>
-          <td>{{ player.player__name }}</td>
-          <td>{{ player.total_score }}</td>
-          <td>{{ player.num_cycles }}</td>
-          <td>{{ player.average|floatformat:2 }}</td>
-          <td>
-            {% if highest_scorers and player.player__id in highest_scorers %}
-              {% if highest_scorers|length > 1 %}
-                ★ (Tie)
-              {% else %}
-                ★
-              {% endif %}
-            {% endif %}
-          </td>
-        </tr>
-      {% empty %}
-        <tr>
-          <td colspan="5" class="text-center">No player statistics available yet.</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  
-  <!-- Score Differentials by Round -->
-  <h3>Score Differentials by Round</h3>
-  <table class="table table-striped">
-    <thead class="table-dark">
-      <tr>
-        <th>Round</th>
-        <th>Max Score</th>
-        <th>Min Score</th>
-        <th>Difference</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for diff in score_diff %}
-        <tr>
-          <td>{{ diff.round_number }}</td>
-          <td>{{ diff.max_score }}</td>
-          <td>{{ diff.min_score }}</td>
-          <td>{{ diff.differential }}</td>
-        </tr>
-      {% empty %}
-        <tr>
-          <td colspan="4" class="text-center">No score differentials available yet.</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+    </div>
+  </div>
+
+  <!-- Score Differentials by Round Card -->
+  <div class="card mb-4 shadow-sm">
+    <div class="card-header">
+      <h3 class="mb-0">Team Differentials by Round</h3> {# Renamed for clarity #}
+    </div>
+    <div class="card-body p-0">
+      {% if round_diffs %}
+      <div class="table-responsive">
+        <table class="table table-striped table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Round</th>
+              <th class="text-end">Own Total</th>
+              <th class="text-end">Opp Total</th>
+              <th class="text-end">Difference (+/-)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for diff in round_diffs %}
+              <tr>
+                <td>{{ diff.round_number }}</td>
+                <td class="text-end">{{ diff.own_total }}</td>
+                <td class="text-end">{{ diff.opp_total }}</td>
+                <td class="text-end {% if diff.differential > 0 %}text-success{% elif diff.differential < 0 %}text-danger{% endif %}">
+                    {% if diff.differential > 0 %}+{% endif %}{{ diff.differential }}
+                </td>
+              </tr>
+            {% empty %}
+               <tr><td colspan="4" class="text-center text-muted p-3">No round differentials available yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <p class="text-center text-muted p-3">No round differentials available yet.</p>
+      {% endif %}
+    </div>
+  </div>
+
+</div> {# End container #}
 {% endblock %}

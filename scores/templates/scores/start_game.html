@@ -1,9 +1,316 @@
 {% extends "scores/base.html" %}
+
+{% block title %}Start New Game{% endblock %}
+
 {% block content %}
   <h1>Start a New Game</h1>
-  <form method="post">
+
+  {# Placeholder for success alerts #}
+  <div id="success-alert-placeholder" class="mb-3"></div>
+
+  <form method="post" id="start-game-form">
     {% csrf_token %}
-    {{ form.as_p }}
+
+    {# Date #}
+    <div class="mb-3">
+      <label for="{{ form.date.id_for_label }}" class="form-label">{{ form.date.label }}</label>
+      {{ form.date }}
+      {% if form.date.errors %}<div class="invalid-feedback d-block">{{ form.date.errors|first }}</div>{% endif %}
+    </div>
+
+    {# Opponent #}
+    <div class="mb-3">
+      <label for="{{ form.opponent.id_for_label }}" class="form-label">{{ form.opponent.label }}</label>
+      <div class="input-group">
+        {{ form.opponent }}
+        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addOpponentModal">
+          Add New
+        </button>
+      </div>
+       {% if form.opponent.errors %}<div class="invalid-feedback d-block">{{ form.opponent.errors|first }}</div>{% endif %}
+    </div>
+
+    {# Location #}
+    <div class="mb-3">
+      <label for="{{ form.location.id_for_label }}" class="form-label">{{ form.location.label }}</label>
+       {# --- Add input-group and button --- #}
+      <div class="input-group">
+        {{ form.location }} {# This is the location dropdown #}
+        {# Button to TRIGGER the location modal #}
+        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#addLocationModal">
+          Add New
+        </button>
+      </div>
+       {# --- End additions --- #}
+      {% if form.location.errors %}<div class="invalid-feedback d-block">{{ form.location.errors|first }}</div>{% endif %}
+    </div>
+
+     {# Game Type #}
+     <div class="mb-3">
+      <label for="{{ form.game_type.id_for_label }}" class="form-label">{{ form.game_type.label }}</label>
+      {{ form.game_type }}
+       {% if form.game_type.errors %}<div class="invalid-feedback d-block">{{ form.game_type.errors|first }}</div>{% endif %}
+    </div>
+
+    {# Cycles #}
+    <div class="mb-3">
+      <label for="{{ form.cycles_per_round.id_for_label }}" class="form-label">{{ form.cycles_per_round.label }}</label>
+      {{ form.cycles_per_round }}
+       {% if form.cycles_per_round.help_text %}<div class="form-text">{{ form.cycles_per_round.help_text }}</div>{% endif %}
+       {% if form.cycles_per_round.errors %}<div class="invalid-feedback d-block">{{ form.cycles_per_round.errors|first }}</div>{% endif %}
+    </div>
+
     <button type="submit" class="btn btn-primary">Start Game</button>
   </form>
+
+  {# ------------- Opponent Modal (Keep As Is) ------------- #}
+  <div class="modal fade" id="addOpponentModal" tabindex="-1" aria-labelledby="addOpponentModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h1 class="modal-title fs-5" id="addOpponentModalLabel">Add New Opponent</h1>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="newOpponentNameInputModal" class="form-label">Opponent Name</label>
+            <input type="text" class="form-control" id="newOpponentNameInputModal" placeholder="Enter new opponent name">
+            <div id="modalErrorMessage" class="text-danger small mt-1"></div> {# Error message area #}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-primary" id="saveOpponentModalBtn">Save Opponent</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  {# ------------- End Opponent Modal ------------- #}
+
+  {# ------------- NEW Location Modal ------------- #}
+  <div class="modal fade" id="addLocationModal" tabindex="-1" aria-labelledby="addLocationModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h1 class="modal-title fs-5" id="addLocationModalLabel">Add New Location</h1> {# Changed Label #}
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="newLocationNameInputModal" class="form-label">Location Name</label> {# Changed Label #}
+            <input type="text" class="form-control" id="newLocationNameInputModal" placeholder="Enter new location name"> {# Changed ID #}
+            <div id="modalLocationErrorMessage" class="text-danger small mt-1"></div> {# Changed ID #}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-primary" id="saveLocationModalBtn">Save Location</button> {# Changed ID #}
+        </div>
+      </div>
+    </div>
+  </div>
+  {# ------------- End Location Modal ------------- #}
+
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Function to get CSRF token from cookies (keep this)
+  function getCookie(name) {
+      // ... (cookie function code) ...
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+          const cookies = document.cookie.split(';');
+          for (let i = 0; i < cookies.length; i++) {
+              const cookie = cookies[i].trim();
+              // Does this cookie string begin with the name we want?
+              if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                  cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                  break;
+              }
+          }
+      }
+      return cookieValue;
+  }
+  const csrftoken = getCookie('csrftoken');
+
+  // --- Modify alert function slightly ---
+  function showSuccessAlert(itemType, itemName) {
+      const alertPlaceholder = document.getElementById('success-alert-placeholder');
+      const alertHTML = `
+          <div class="alert alert-success alert-dismissible fade show" role="alert">
+              Successfully added ${itemType}: <strong>${itemName}</strong>!
+              <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+      `;
+      alertPlaceholder.innerHTML = alertHTML;
+  }
+
+
+  document.addEventListener('DOMContentLoaded', function() {
+    console.log("DOM Loaded. Setting up modal listeners.");
+
+    // --- Opponent Elements & Logic (Keep As Is) ---
+    const opponentSelect = document.getElementById('id_opponent');
+    const addOpponentModalElement = document.getElementById('addOpponentModal');
+    const saveOpponentModalBtn = document.getElementById('saveOpponentModalBtn');
+    const newOpponentInputModal = document.getElementById('newOpponentNameInputModal');
+    const modalOpponentErrorMessage = document.getElementById('modalErrorMessage'); // Renamed for clarity
+
+    // Check Opponent elements
+    if (!opponentSelect) console.error("Element 'id_opponent' not found!");
+    // ... (other opponent element checks) ...
+    if (!modalOpponentErrorMessage) console.error("Element 'modalErrorMessage' not found!");
+
+
+    let addOpponentModal;
+    try {
+        addOpponentModal = new bootstrap.Modal(addOpponentModalElement);
+        console.log("Opponent modal instance created.");
+    } catch (e) { console.error("Error creating Opponent modal instance:", e); }
+
+    if (addOpponentModal) {
+        addOpponentModalElement.addEventListener('show.bs.modal', event => {
+            console.log("Opponent Modal showing...");
+            newOpponentInputModal.value = '';
+            modalOpponentErrorMessage.textContent = ''; // Use specific error message element
+        });
+        addOpponentModalElement.addEventListener('shown.bs.modal', () => {
+            console.log("Opponent Modal shown.");
+            newOpponentInputModal.focus()
+        });
+
+        saveOpponentModalBtn.addEventListener('click', function() {
+            console.log("Save Opponent button clicked.");
+            const opponentName = newOpponentInputModal.value.trim();
+            modalOpponentErrorMessage.textContent = ''; // Use specific error message element
+            console.log("Opponent name entered:", opponentName);
+
+            if (!opponentName) {
+                modalOpponentErrorMessage.textContent = 'Please enter an opponent name.';
+                console.log("Validation failed: Opponent Name empty.");
+                return;
+            }
+
+            saveOpponentModalBtn.disabled = true;
+            saveOpponentModalBtn.textContent = 'Saving...';
+            console.log("Making fetch request for Opponent...");
+
+            fetch("{% url 'ajax_add_opponent' %}", { /* ... fetch options ... */
+                 method: 'POST',
+                 headers: { 'X-CSRFToken': csrftoken, 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+                 body: `name=${encodeURIComponent(opponentName)}`
+             })
+            .then(response => { /* ... response handling ... */
+                 console.log("Fetch Opponent response received. Status:", response.status);
+                 if (!response.ok) { return response.json().then(errData => { throw new Error(errData.error || `Request failed: ${response.status}`); }).catch(() => { throw new Error(`Request failed: ${response.status}`); }); }
+                 return response.json();
+             })
+            .then(data => { /* ... success/error handling ... */
+                 console.log("Fetch Opponent success data:", data);
+                 if (data.success) {
+                    const newOption = document.createElement('option'); newOption.value = data.id; newOption.textContent = data.name;
+                    opponentSelect.appendChild(newOption); newOption.selected = true;
+                    addOpponentModal.hide();
+                    showSuccessAlert('opponent', data.name); // Use updated alert function
+                    console.log("Opponent Added.");
+                 } else {
+                    modalOpponentErrorMessage.textContent = data.error || 'Failed.'; console.warn("Server returned opponent success:false", data.error);
+                 }
+             })
+            .catch(error => { /* ... error handling ... */
+                 console.error('Fetch Opponent catch block error:', error); modalOpponentErrorMessage.textContent = `Error: ${error.message || 'Unknown error.'}`;
+             })
+            .finally(() => { /* ... finally block ... */
+                 console.log("Fetch Opponent finally block executing."); saveOpponentModalBtn.disabled = false; saveOpponentModalBtn.textContent = 'Save Opponent';
+             });
+        });
+    } // end if (addOpponentModal)
+
+    // --- NEW Location Elements & Logic ---
+    const locationSelect = document.getElementById('id_location'); // Use form field ID
+    const addLocationModalElement = document.getElementById('addLocationModal');
+    const saveLocationModalBtn = document.getElementById('saveLocationModalBtn');
+    const newLocationInputModal = document.getElementById('newLocationNameInputModal');
+    const modalLocationErrorMessage = document.getElementById('modalLocationErrorMessage');
+
+    // Check Location elements
+    if (!locationSelect) console.error("Element 'id_location' not found!");
+    if (!addLocationModalElement) console.error("Element 'addLocationModal' not found!");
+    if (!saveLocationModalBtn) console.error("Element 'saveLocationModalBtn' not found!");
+    if (!newLocationInputModal) console.error("Element 'newLocationNameInputModal' not found!");
+    if (!modalLocationErrorMessage) console.error("Element 'modalLocationErrorMessage' not found!");
+
+
+    let addLocationModal;
+    try {
+        addLocationModal = new bootstrap.Modal(addLocationModalElement);
+        console.log("Location modal instance created.");
+    } catch (e) { console.error("Error creating Location modal instance:", e); }
+
+
+    if (addLocationModal) { // Only add listeners if modal instance was created
+        addLocationModalElement.addEventListener('show.bs.modal', event => {
+            console.log("Location Modal showing...");
+            newLocationInputModal.value = '';
+            modalLocationErrorMessage.textContent = '';
+        });
+        addLocationModalElement.addEventListener('shown.bs.modal', () => {
+            console.log("Location Modal shown.");
+            newLocationInputModal.focus();
+        });
+
+        saveLocationModalBtn.addEventListener('click', function() {
+            console.log("Save Location button clicked.");
+            const locationName = newLocationInputModal.value.trim();
+            modalLocationErrorMessage.textContent = '';
+            console.log("Location name entered:", locationName);
+
+            if (!locationName) {
+                modalLocationErrorMessage.textContent = 'Please enter a location name.';
+                console.log("Validation failed: Location Name empty.");
+                return;
+            }
+
+            saveLocationModalBtn.disabled = true;
+            saveLocationModalBtn.textContent = 'Saving...';
+            console.log("Making fetch request for Location...");
+
+            // --- Fetch for Location ---
+            fetch("{% url 'ajax_add_location' %}", { // Use the NEW URL name
+                 method: 'POST',
+                 headers: { 'X-CSRFToken': csrftoken, 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+                 body: `name=${encodeURIComponent(locationName)}` // Send location name
+             })
+            .then(response => {
+                 console.log("Fetch Location response received. Status:", response.status);
+                 if (!response.ok) { return response.json().then(errData => { throw new Error(errData.error || `Request failed: ${response.status}`); }).catch(() => { throw new Error(`Request failed: ${response.status}`); }); }
+                 return response.json();
+             })
+            .then(data => {
+                 console.log("Fetch Location success data:", data);
+                 if (data.success) {
+                    // Update Location Dropdown
+                    const newOption = document.createElement('option'); newOption.value = data.id; newOption.textContent = data.name;
+                    locationSelect.appendChild(newOption); // Use locationSelect
+                    newOption.selected = true;
+                    addLocationModal.hide(); // Use location modal instance
+                    showSuccessAlert('location', data.name); // Specify item type
+                    console.log("Location Added.");
+                 } else {
+                    modalLocationErrorMessage.textContent = data.error || 'Failed.'; console.warn("Server returned location success:false", data.error);
+                 }
+             })
+            .catch(error => {
+                 console.error('Fetch Location catch block error:', error); modalLocationErrorMessage.textContent = `Error: ${error.message || 'Unknown error.'}`;
+             })
+            .finally(() => {
+                 console.log("Fetch Location finally block executing."); saveLocationModalBtn.disabled = false; saveLocationModalBtn.textContent = 'Save Location';
+             });
+        });
+    } // end if (addLocationModal)
+
+}); // End DOMContentLoaded
+</script>
 {% endblock %}

@@ -1,13 +1,55 @@
-
 {% extends "scores/base.html" %}
+{% load static %}
+
 {% block content %}
-<div class="container my-5 text-center">
-  <h1>Round Complete!</h1>
-  <p>What would you like to do next?</p>
-  <form method="post">
-    {% csrf_token %}
-    <button type="submit" name="next_round" class="btn btn-success me-3">Start Next Round</button>
-    <button type="submit" name="end_game" class="btn btn-danger">End Game</button>
-  </form>
+<div class="container my-4">
+  <h1>Round {{ completed_round }} Complete!</h1>
+  <h2>Game: {{ game }}</h2>
+
+  <p>Round {{ completed_round }} has finished.</p>
+
+  {# Optional: Display round summary scores #}
+  {% if round_scores %}
+    <h4>Round {{ completed_round }} Scoreboard</h4>
+    <table class="table table-sm table-striped w-auto">
+        <thead class="table-dark">
+            <tr>
+                <th>Player</th>
+                <th>Cycle</th>
+                <th>Rolls</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for score in round_scores %}
+                {% include "scores/partials/score_row.html" with score=score %}
+            {% endfor %}
+            {# You could add round totals here if desired #}
+        </tbody>
+    </table>
+  {% endif %}
+
+  <hr>
+
+  {# --- Action Buttons --- #}
+  <div class="my-3">
+    {# Check if there are more rounds (optional: based on a game.total_rounds field) #}
+    {# {% if completed_round < game.total_rounds %} #}
+      <form method="post" action="{% url 'round_complete' game.id %}" style="display: inline-block;">
+          {% csrf_token %}
+          <button type="submit" name="next_round" class="btn btn-primary">Start Round {{ completed_round|add:1 }}</button>
+      </form>
+    {# {% endif %} #}
+
+    <form method="post" action="{% url 'round_complete' game.id %}" style="display: inline-block;">
+        {% csrf_token %}
+        <button type="submit" name="end_game" class="btn btn-warning ms-2">End Game & View Stats</button>
+    </form>
+
+    <a href="{% url 'game_detail' game.id %}" class="btn btn-secondary ms-2">Game Overview</a>
+    {# Add a link back to live_game only if debugging, usually not needed here #}
+    {# <a href="{% url 'live_game' game.id %}" class="btn btn-outline-secondary ms-2">Back to Live (Debug)</a> #}
+  </div>
+
 </div>
 {% endblock %}

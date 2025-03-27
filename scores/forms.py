@@ -1,32 +1,49 @@
 # scores/forms.py
 from django import forms
 from django.forms import modelformset_factory
-from .models import Game, Score, GamePlayer, Player
+# Add Opponent to imports
+from .models import Game, Score, GamePlayer, Player, Opponent, Location, GameType
 
 class GameSetupForm(forms.ModelForm):
+    # Use ModelChoiceField for opponent dropdown
+    opponent = forms.ModelChoiceField(
+        queryset=Opponent.objects.all().order_by('name'),
+        widget=forms.Select(attrs={"class": "form-select", "id": "id_opponent"}) # Add id for JS
+    )
+    # Ensure Location and GameType also use appropriate querysets if not default
+    location = forms.ModelChoiceField(
+        queryset=Location.objects.all().order_by('name'),
+        widget=forms.Select(attrs={"class": "form-select"})
+    )
+    game_type = forms.ModelChoiceField(
+        queryset=GameType.objects.all().order_by('name'),
+        widget=forms.Select(attrs={"class": "form-select"})
+    )
+
     class Meta:
         model = Game
-        fields = ["date", "opponent", "location", "game_type", "cycles_per_round"]
+        # Make sure opponent is included in fields
+        fields = ["date", "opponent", "location", "game_type", "cycles_per_round"] 
         widgets = {
             "date": forms.DateInput(attrs={"type": "date", "class": "form-control"}),
-            "opponent": forms.TextInput(attrs={"class": "form-control"}),
-            # Use Select widgets so the admin picks from existing entries.
-            "location": forms.Select(attrs={"class": "form-select"}),
-            "game_type": forms.Select(attrs={"class": "form-select"}),
+            # opponent widget is defined above
+            # location widget is defined above
+            # game_type widget is defined above
             "cycles_per_round": forms.NumberInput(attrs={
                 "class": "form-control",
                 "min": 1,
                 "placeholder": "e.g., 4"
             }),
+            
         }
         labels = {
             "cycles_per_round": "Cycles per Round",
         }
         help_texts = {
-            "cycles_per_round": ("This is the number of complete cycles. Each cycle means that every "
-                                 "player on each team takes one turn. For example, if you have 4 players, "
-                                 "4 cycles equal 16 total turns per team."),
+            "cycles_per_round": ("Number of turns each player takes per round."),
         }
+
+# --- Rest of your forms (PlayerForm, GamePlayerForm, etc.) remain the same ---
 
 class PlayerForm(forms.ModelForm):
     class Meta:
@@ -43,7 +60,7 @@ class GamePlayerForm(forms.ModelForm):
         widgets = {
             "player": forms.Select(attrs={"class": "form-select"}),
         }
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Only include players who are not auto-generated as opponents.

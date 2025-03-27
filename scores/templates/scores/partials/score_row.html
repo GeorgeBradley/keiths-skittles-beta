@@ -1,0 +1,15 @@
+{% comment %} Renders a single row for the scoreboard table {% endcomment %}
+<tr data-score-id="{{ score.id }}">
+  <td>{{ score.player__name|default:score.player.name|default:"N/A" }}</td> {# Handle dict or object access #}
+  <td>{{ score.cycle_number|default:"N/A" }}</td>
+  <td>
+    {# Display rolls, handling None values gracefully - REMOVED HYPHENS from tags #}
+    {% with r1=score.roll1 r2=score.roll2 r3=score.roll3 %}  {# REMOVED HYPHEN #}
+      {% if r1 is not None %}{{ r1 }}{% endif %}            {# REMOVED HYPHEN #}
+      {% if r2 is not None %}{% if r1 is not None %}, {% endif %}{{ r2 }}{% endif %}            {# REMOVED HYPHEN #}
+      {% if r3 is not None %}{% if r1 is not None or r2 is not None %}, {% endif %}{{ r3 }}{% endif %}            {# REMOVED HYPHEN #}
+      {% if r1 is None and r2 is None and r3 is None %}-{% endif %} {# Display dash if no rolls - REMOVED HYPHEN #}
+    {% endwith %}                                          {# REMOVED HYPHEN #}
+  </td>
+  <td>{{ score.total|default:"N/A" }}</td>
+</tr>

@@ -1,0 +1,11 @@
+{% comment %} Renders the text for the plus/minus display {% endcomment %}
+{% if plus_minus > 0 %}
+  +{{ plus_minus }} (Your Team Ahead)
+{% elif plus_minus < 0 %}
+  {{ plus_minus }} (Opponents Ahead)
+{% elif plus_minus == 0 %}
+  0 (Tied)
+{% else %}
+  {#{% comment %} Handle None case if necessary {% endcomment %}#}
+  {#{% comment %} N/A or empty {% endcomment %}#}
+{% endif %}

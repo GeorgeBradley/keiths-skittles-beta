@@ -1,0 +1,136 @@
+{% extends "scores/base.html" %}
+{% load static %}
+
+{% block title %}Stats vs Opponent{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+  <h1 class="mb-4">Game Statistics vs. Opponent</h1>
+
+  {# --- Selection Form --- #}
+  <form method="get" action="{% url 'opponent_statistics' %}" class="mb-4 row g-3 align-items-end"> {# Use align-items-end for button #}
+    {# Opponent Select #}
+    <div class="col-md-4">
+        <label for="opponent_id" class="form-label">Select Opponent:</label>
+        <select name="opponent_id" id="opponent_id" class="form-select" required> {# Made opponent required #}
+            <option value="">-- Select --</option>
+            {% for opponent in opponents %}
+            <option value="{{ opponent.id }}" {% if selected_opponent and selected_opponent.id == opponent.id %}selected{% endif %}>
+                {{ opponent.name }}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    {# --- Game Type Filter --- #}
+    <div class="col-md-4">
+        <label for="game_type_id" class="form-label">Filter by Game Type:</label>
+        <select name="game_type_id" id="game_type_id" class="form-select">
+            <option value="">-- All Game Types --</option> {# Default option #}
+            {% for gt in game_types %}
+            <option value="{{ gt.id }}" {% if selected_game_type and selected_game_type.id == gt.id %}selected{% endif %}>
+                {{ gt.name }}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+    {# --- End Game Type Filter --- #}
+
+    {# Submit Button #}
+    <div class="col-md-2">
+        <button type="submit" class="btn btn-primary w-100">View Stats</button>
+    </div>
+  </form>
+
+  {# --- Statistics Display Area --- #}
+  {% if selected_opponent %} {# Only show stats if an opponent was selected #}
+    <hr>
+    <h2 class="mb-3">
+        Stats vs: {{ selected_opponent.name }}
+        {# --- Display Active Filter --- #}
+        {% if selected_game_type %}
+          <span class="badge bg-secondary fw-normal fs-6 ms-2">Type: {{ selected_game_type.name }}</span>
+        {% endif %}
+        {# --- End Display Active Filter --- #}
+    </h2>
+
+
+    {% if stats.error %} {# Display error if calculation failed #}
+       <div class="alert alert-warning" role="alert">{{ stats.error }}</div>
+
+    {% elif stats and stats.total_games is not None %} {# Display stats if calculated #}
+
+      {# Key Stats Row #}
+      <div class="row g-3 mb-4">
+          <div class="col-md-6 col-lg-3"><div class="card text-center h-100 shadow-sm"><div class="card-body"><h5 class="card-title">Total Games</h5><p class="card-text fs-2 fw-bold">{{ stats.total_games|default:0 }}</p></div></div></div>
+          <div class="col-md-6 col-lg-3"><div class="card text-center h-100 shadow-sm"><div class="card-body"><h5 class="card-title">Record (W-L-D)</h5><p class="card-text fs-4"><span class="text-success">{{ stats.wins|default:0 }}</span>-<span class="text-danger">{{ stats.losses|default:0 }}</span>-<span class="text-secondary">{{ stats.draws|default:0 }}</span></p><small class="text-muted">Win %: {{ stats.win_percentage|default:0|floatformat:1 }}%</small></div></div></div>
+          <div class="col-md-6 col-lg-3"><div class="card text-center h-100 shadow-sm"><div class="card-body"><h5 class="card-title">Avg Score For</h5><p class="card-text fs-2 fw-bold">{{ stats.avg_score_for|default:0|floatformat:1 }}</p></div></div></div>
+          <div class="col-md-6 col-lg-3"><div class="card text-center h-100 shadow-sm"><div class="card-body"><h5 class="card-title">Avg Score Against</h5><p class="card-text fs-2 fw-bold">{{ stats.avg_score_against|default:0|floatformat:1 }}</p><small class="text-muted">Avg Diff: {{ stats.avg_score_diff|default:0|floatformat:1 }}</small></div></div></div>
+      </div>
+
+      {# More Stats & Chart Row #}
+      <div class="row g-4">
+           <div class="col-lg-6"><div class="card mb-4 shadow-sm"><div class="card-header">Score Extremes</div><ul class="list-group list-group-flush"><li class="list-group-item d-flex justify-content-between">Highest Score For: <span class="fw-bold text-success">{{ stats.highest_score_for|default:'N/A' }}</span></li><li class="list-group-item d-flex justify-content-between">Lowest Score For: <span class="fw-bold text-danger">{{ stats.lowest_score_for|default:'N/A' }}</span></li><li class="list-group-item d-flex justify-content-between">Highest Score Against: <span class="fw-bold text-danger">{{ stats.highest_score_against|default:'N/A' }}</span></li><li class="list-group-item d-flex justify-content-between">Lowest Score Against: <span class="fw-bold text-success">{{ stats.lowest_score_against|default:'N/A' }}</span></li></ul></div></div>
+          <div class="col-lg-6"><div class="card mb-4 shadow-sm"><div class="card-header"><h5 class="mb-0">Performance Trend <small class="text-muted">(Score Diff)</small></h5></div><div class="card-body">{% if chart_data_json %}<div style="position: relative; width: 100%; height: auto; min-height: 200px;"><canvas id="opponentPerformanceChart"></canvas></div>{% else %}<p class="text-center text-muted">Not enough game data for trend chart.</p>{% endif %}</div></div></div>
+          <div class="col-lg-6"><div class="card mb-4 shadow-sm"><div class="card-header"><h5 class="mb-0">Performance by Location</h5></div>{% if stats.location_stats %}<div class="table-responsive"><table class="table table-sm table-striped mb-0"><thead><tr><th>Location</th><th>Record</th><th class="text-end">Avg Diff</th><th class="text-end">Games</th></tr></thead><tbody>{% for loc_stat in stats.location_stats %}<tr><td>{{ loc_stat.name }}</td><td>{{ loc_stat.wins }}-{{ loc_stat.losses }}-{{ loc_stat.draws }}</td><td class="text-end">{{ loc_stat.avg_diff|floatformat:1 }}</td><td class="text-end">{{ loc_stat.count }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="card-body"><p class="text-muted mb-0">No location breakdown available.</p></div>{% endif %}</div></div>
+          <div class="col-lg-6"><div class="card mb-4 shadow-sm"><div class="card-header"><h5 class="mb-0">Top Own Players vs {{ selected_opponent.name }}</h5></div>{% if stats.top_players %}<div class="table-responsive"><table class="table table-sm table-striped mb-0"><thead><tr><th>Player</th><th class="text-end">Total Score</th><th class="text-end">Avg / Cycle</th><th class="text-end">Cycles</th></tr></thead><tbody>{% for p_stat in stats.top_players %}<tr><td>{{ p_stat.player__name }}</td><td class="text-end">{{ p_stat.total_score_vs_opp }}</td><td class="text-end">{{ p_stat.avg_score_vs_opp|floatformat:2 }}</td><td class="text-end">{{ p_stat.cycle_count_vs_opp }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="card-body"><p class="text-muted mb-0">No player breakdown available.</p></div>{% endif %}</div></div>
+      </div>
+
+    {% endif %} {# End if stats and not stats.error #}
+
+  {% else %} {# Initial state - no opponent selected #}
+      <div class="alert alert-info" role="alert">Please select an opponent to view statistics.</div>
+  {% endif %} {# End if selected_opponent #}
+
+</div> {# End container #}
+{% endblock %}
+
+
+{% block extra_js %}
+{# Chart.js only needed if chart data exists and an opponent is selected #}
+{% if selected_opponent and chart_data_json %}
+  {# Include Chart.js library & adapters #}
+   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+   <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.1.0/dist/chartjs-adapter-luxon.min.js"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const ctxOpponent = document.getElementById('opponentPerformanceChart');
+      if (ctxOpponent) {
+        const chartDataOpponent = JSON.parse('{{ chart_data_json|safe|escapejs }}');
+        if (chartDataOpponent && chartDataOpponent.labels && chartDataOpponent.data) {
+            new Chart(ctxOpponent, {
+                type: 'line',
+                data: {
+                    labels: chartDataOpponent.labels, // Dates
+                    datasets: [{
+                        label: 'Score Differential (Own - Opp)',
+                        data: chartDataOpponent.data, // Differentials
+                        borderColor: 'rgb(54, 162, 235)', // Blue
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false, // Allow chart to shrink height if needed
+                    scales: {
+                        x: { type: 'time', time: { unit: 'day', tooltipFormat: 'DD MMM yyyy', displayFormats: { day: 'MMM d, yyyy'}}, title: { display: true, text: 'Game Date'}},
+                        y: { title: { display: true, text: 'Score Differential' } } // No need for beginAtZero for diff
+                    },
+                    plugins: {
+                        tooltip: { mode: 'index', intersect: false, },
+                        title: {
+                            display: true,
+                            // Dynamically build title including opponent and optional game type filter
+                            text: 'Performance Trend vs {{ selected_opponent.name|escapejs }}' + '{% if selected_game_type %} ({{ selected_game_type.name|escapejs }}){% endif %}'
+                        }
+                    }
+                }
+            });
+        } else { console.warn("Opponent chart data invalid."); }
+      } else { console.warn("Canvas element 'opponentPerformanceChart' not found."); }
+    });
+  </script>
+{% endif %} {# End if selected_opponent and chart_data_json #}
+{% endblock %}

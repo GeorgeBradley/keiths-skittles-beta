@@ -3,59 +3,166 @@
 
 {% block content %}
 <div class="container my-4">
-  <h1>Live Game: {{ game }}</h1>
-  <div class="mb-3">
-    <h4>{{ message }}</h4>
-    {% if plus_minus != None %}
-      <p class="lead">
-        Score Differential: <strong>
-          {% if plus_minus > 0 %}
-            +{{ plus_minus }} (Your Team Ahead)
-          {% elif plus_minus < 0 %}
-            {{ plus_minus }} (Opponents Ahead)
-          {% else %}
-            0 (Tied)
-          {% endif %}
-        </strong>
-      </p>
+  {# --- Page Heading --- #}
+  <h1>Live Game: {{ game }} (Round {{ current_round }})</h1>
+
+  {# --- Message Display Area (Info/Success/Error) --- #}
+  <div id="message-display" class="alert {% if error %}alert-danger{% elif round_complete %}alert-success{% else %}alert-info{% endif %}" role="alert">
+    <h4 id="message-text">{{ message|default:"Loading game state..." }}</h4>
+    {% if error %}<p>Error: {{ error }}</p>{% endif %}
+  </div>
+
+  {# --- Form Validation Error Area (Populated by JS) --- #}
+  <div id="form-errors" class="alert alert-danger" style="display: none;" role="alert"></div>
+
+  {# --- Score Differential Display --- #}
+  <div class="mb-3" id="plus-minus-container">
+    {% if plus_minus is not None %}
+      <p class="lead">Score Differential: <strong id="plus-minus-value">{% include "scores/partials/plus_minus_display.html" with plus_minus=plus_minus %}</strong></p>
+    {% else %}
+       <p class="lead" style="display: none;">Score Differential: <strong id="plus-minus-value"></strong></p>
     {% endif %}
   </div>
 
-  <form method="post">
-    {% csrf_token %}
-    {{ score_form.as_p }}
-    <button type="submit" name="enter_score" class="btn btn-success">Submit Score</button>
-  </form>
+  {# --- Score Entry Form Wrapper --- #}
+  <div id="score-form-wrapper" {% if round_complete or error %} style="display: none;" {% endif %}>
+    <form method="post" id="score-form" action="{% url 'live_game' game.id %}" novalidate>
+      {% csrf_token %}{{ score_form.as_p }}
+      <button type="submit" name="enter_score" id="submit-score-btn" class="btn btn-success">Submit Score</button>
+    </form>
+  </div>
+
+  {# --- Round Completion Display Wrapper --- #}
+  {# This whole div is hidden/shown based on round_complete status #}
+  <div id="round-complete-wrapper" {% if not round_complete %} style="display: none;" {% endif %}>
+     <div class="alert alert-success">
+       <span id="round-complete-message">Round {{ current_round }} is complete.</span>
+       {# --- UPDATED LINK AND ERROR SPAN --- #}
+       <a id="round-complete-link" href="{{ round_complete_url|default:'#' }}" class="btn btn-primary ms-2" {% if not round_complete_url %} style="display: none;" {% endif %}>Proceed</a>
+       <span id="round-complete-error" class="ms-2" {% if round_complete_url %} style="display: none;" {% endif %}>Proceed (link error).</span>
+       {# ----------------------------------- #}
+       <a href="{% url 'game_statistics' game.id %}" class="btn btn-info ms-2">View Game Stats</a>
+     </div>
+  </div>
 
   <hr>
-  <h3>Scoreboard (Round 1)</h3>
-  {% if scores %}
-    <table class="table table-striped">
-      <thead class="table-dark">
-        <tr>
-          <th>Player</th>
-          <th>Cycle</th>
-          <th>Rolls</th>
-          <th>Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for score in scores %}
-          <tr>
-            <td>{{ score.player.name }}</td>
-            <td>{{ score.cycle_number }}</td>
-            <td>
-              {% if score.roll1 %}{{ score.roll1 }}{% endif %}
-              {% if score.roll2 %}, {{ score.roll2 }}{% endif %}
-              {% if score.roll3 %}, {{ score.roll3 }}{% endif %}
-            </td>
-            <td>{{ score.total }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-    <p>No scores recorded yet.</p>
-  {% endif %}
+
+  {# --- Scoreboard Section --- #}
+  <h3>Scoreboard (Round {{ current_round }})</h3>
+  <div id="scoreboard-container">
+    {% if scores %}
+      <table class="table table-striped" id="scores-table">
+        <thead class="table-dark"><tr><th>Player</th><th>Cycle</th><th>Rolls</th><th>Total</th></tr></thead>
+        <tbody id="scoreboard-body">
+          {% for score in scores %}{% include "scores/partials/score_row.html" with score=score %}{% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p id="no-scores-message">No scores recorded yet for this round.</p>
+    {% endif %}
+  </div>
 </div>
+
+{# ========================== JavaScript ========================== #}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // --- Get References (including error span) ---
+    const scoreForm = document.getElementById('score-form');
+    const messageTextEl = document.getElementById('message-text');
+    const messageDisplayEl = document.getElementById('message-display');
+    const formErrorsEl = document.getElementById('form-errors');
+    const submitButton = document.getElementById('submit-score-btn');
+    const plusMinusValueEl = document.getElementById('plus-minus-value');
+    const plusMinusContainerEl = document.getElementById('plus-minus-container');
+    const scoreboardBody = document.getElementById('scoreboard-body');
+    const noScoresMsg = document.getElementById('no-scores-message');
+    const scoreboardContainer = document.getElementById('scoreboard-container');
+    const scoreFormWrapper = document.getElementById('score-form-wrapper');
+    const roundCompleteWrapper = document.getElementById('round-complete-wrapper');
+    const roundCompleteMessageEl = document.getElementById('round-complete-message');
+    const roundCompleteLink = document.getElementById('round-complete-link');
+    const roundCompleteError = document.getElementById('round-complete-error'); // <<<<< Get error span ref
+
+    const initialPlusMinus = {{ plus_minus|default_if_none:"null" }};
+
+    // Helper Functions (updatePlusMinusDisplay, renderScoreRow - unchanged)
+    function updatePlusMinusDisplay(plusMinusValue) { if (!plusMinusValueEl || !plusMinusContainerEl) return; let displayText = ''; if (plusMinusValue > 0) displayText = `+${plusMinusValue} (Your Team Ahead)`; else if (plusMinusValue < 0) displayText = `${plusMinusValue} (Opponents Ahead)`; else displayText = `0 (Tied)`; plusMinusValueEl.innerHTML = displayText; const leadParagraph = plusMinusContainerEl.querySelector('.lead'); if (leadParagraph) leadParagraph.style.display = ''; }
+    function renderScoreRow(score) { let targetTbody = document.getElementById('scoreboard-body'); if (noScoresMsg && noScoresMsg.style.display !== 'none') { let table = document.getElementById('scores-table'); if (!table && scoreboardContainer) { scoreboardContainer.innerHTML = `<table class="table table-striped" id="scores-table"><thead class="table-dark"><tr><th>Player</th><th>Cycle</th><th>Rolls</th><th>Total</th></tr></thead><tbody id="scoreboard-body"></tbody></table>`; targetTbody = document.getElementById('scoreboard-body'); } noScoresMsg.style.display = 'none'; } if (!targetTbody) { console.error("Scoreboard body not found!"); return; } let rollsText = ''; const rolls = [score.roll1, score.roll2, score.roll3]; const validRolls = rolls.filter(roll => roll !== null && roll !== undefined); rollsText = validRolls.join(', '); if (!rollsText) rollsText = '-'; const newRow = targetTbody.insertRow(); newRow.setAttribute('data-score-id', score.id); newRow.innerHTML = `<td>${score.player__name || 'N/A'}</td><td>${score.cycle_number || 'N/A'}</td><td>${rollsText}</td><td>${score.total !== null ? score.total : 'N/A'}</td>`; }
+
+    // Initial Plus/Minus
+    if (initialPlusMinus !== null) { updatePlusMinusDisplay(initialPlusMinus); }
+
+    // AJAX Submit Handler
+    if (scoreForm) {
+      scoreForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+        // UI Feedback Start
+        if (submitButton) submitButton.disabled = true; if (messageTextEl) messageTextEl.textContent = "Submitting score..."; if (messageDisplayEl) messageDisplayEl.className = 'alert alert-info'; if (formErrorsEl) formErrorsEl.style.display = 'none';
+
+        const formData = new FormData(scoreForm); const csrfToken = formData.get('csrfmiddlewaretoken');
+
+        fetch(scoreForm.action, { method: 'POST', body: formData, headers: { 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' } })
+        .then(response => { /* Error checking */ if (!response.ok) { return response.json().then(errData => { throw { status: response.status, data: errData }; }).catch(parseError => { throw { status: response.status, data: { error: `Server Error: ${response.statusText}` }}; }); } return response.json(); })
+        .then(data => {
+          // Handle success OR the specific "already complete" error case
+          if (data.success || (data.success === false && data.round_complete === true && data.error === "Round already complete.")) {
+            if (messageTextEl && data.message) messageTextEl.textContent = data.message;
+            if (data.plus_minus !== undefined) updatePlusMinusDisplay(data.plus_minus);
+            if (data.success && data.new_score) { renderScoreRow(data.new_score); scoreForm.reset(); }
+
+            // --- Check for Round Completion ---
+            if (data.round_complete) {
+                const finalMessage = data.message || `Round completed.`;
+                if (messageTextEl) messageTextEl.textContent = finalMessage;
+                if (messageDisplayEl) messageDisplayEl.className = 'alert alert-success';
+                if (scoreFormWrapper) scoreFormWrapper.style.display = 'none';
+
+                if (roundCompleteWrapper) {
+                    if (roundCompleteMessageEl) roundCompleteMessageEl.textContent = finalMessage;
+
+                    // --- Explicitly Show/Hide Link vs Error ---
+                    // Check if data.round_complete_url is truthy
+                    if (roundCompleteLink && roundCompleteError && data.round_complete_url) {
+                        roundCompleteLink.href = data.round_complete_url;
+                        roundCompleteLink.style.display = ''; // <<<<< SHOW Link
+                        roundCompleteError.style.display = 'none'; // <<<<< HIDE Error Span
+                        console.log("JS: Round complete, URL found, showing link:", data.round_complete_url);
+                    } else if (roundCompleteLink && roundCompleteError) { // URL is null/missing
+                        console.error("JS: Round complete, but URL missing/null in response:", data);
+                        roundCompleteLink.style.display = 'none'; // <<<<< HIDE Link
+                        roundCompleteError.style.display = ''; // <<<<< SHOW Error Span
+                    }
+                    // --- End Explicit Show/Hide ---
+
+                    roundCompleteWrapper.style.display = ''; // Show the wrapper
+                }
+            } else if (data.success) { // Round NOT complete, score WAS successful
+                 if (submitButton) submitButton.disabled = false;
+                 const firstInput = scoreForm.querySelector('input[type="number"], input[type="text"]');
+                 if(firstInput) { try { firstInput.focus(); } catch (e) { /* ignore */ } }
+            } else { // !data.success and not round_complete (e.g. validation error)
+                 if (submitButton) submitButton.disabled = false;
+            }
+
+          } else { // Handle other !data.success cases (validation errors)
+            if (data.errors && formErrorsEl) { /* Error display */ let errorHtml = '<strong>Errors:</strong><ul>'; for (const field in data.errors) { const fieldErrors = Array.isArray(data.errors[field]) ? data.errors[field] : [data.errors[field]]; fieldErrors.forEach(error => { errorHtml += `<li>${field === '__all__' ? '' : field + ': '}${error.message || error}</li>`; }); } errorHtml += '</ul>'; formErrorsEl.innerHTML = errorHtml; formErrorsEl.style.display = 'block'; if (messageTextEl) messageTextEl.textContent = "Submission failed."; if (messageDisplayEl) messageDisplayEl.className = 'alert alert-warning';
+            } else if (data.error && formErrorsEl) { /* Generic error */ formErrorsEl.innerHTML = `<strong>Error:</strong> ${data.error}`; formErrorsEl.style.display = 'block'; if (messageTextEl) messageTextEl.textContent = "Submission failed."; if (messageDisplayEl) messageDisplayEl.className = 'alert alert-danger';
+            } else { throw new Error('Unknown submission failure.'); }
+            if (submitButton) submitButton.disabled = false;
+          }
+        })
+        .catch(error => { /* Network/Fetch error handling */
+          console.error('AJAX Error:', error); let errorMsg = 'Unexpected error.'; if (error && error.data && error.data.error) { errorMsg = `Error: ${error.data.error}`; } else if (error && error.status) { errorMsg = `Server error: ${error.status}.`; } else if (error instanceof Error && error.message) { errorMsg = error.message; } if (messageTextEl) messageTextEl.textContent = "Error."; if (messageDisplayEl) messageDisplayEl.className = 'alert alert-danger'; if (formErrorsEl) { formErrorsEl.innerHTML = `<strong>Error:</strong> ${errorMsg}`; formErrorsEl.style.display = 'block'; } if (submitButton) submitButton.disabled = false;
+        });
+      }); // End submit listener
+    }
+
+    // Initial focus
+    if(scoreFormWrapper && scoreFormWrapper.style.display !== 'none') {
+        const firstInputOnLoad = scoreForm.querySelector('input[type="number"], input[type="text"]');
+        if(firstInputOnLoad) { try { firstInputOnLoad.focus(); } catch (e) { /* ignore */ } }
+    }
+
+}); // End DOMContentLoaded
+</script>
 {% endblock %}

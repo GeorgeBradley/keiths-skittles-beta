@@ -16,10 +16,27 @@ class GameType(models.Model):
     
     def __str__(self):
         return self.name
+# --- New Model ---
+
+class Opponent(models.Model):
+    """Represents a distinct opposing team."""
+    name = models.CharField(max_length=100, unique=True)
+    # You could add more fields here later, e.g., home_location, notes
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        ordering = ['name'] # Optional: Keeps opponent lists sorted
 
 class Game(models.Model):
     date = models.DateField()
-    opponent = models.CharField(max_length=100)
+    # --- FINAL VERSION ---
+    opponent = models.ForeignKey(
+        Opponent,
+        on_delete=models.PROTECT,
+        related_name="games",
+        null=True # Keep nullable for now
+    )
     # Use the existing column names "location" and "game_type" instead of the default "location_id"/"game_type_id"
     location = models.ForeignKey(Location, on_delete=models.SET_NULL, null=True, db_column="location")
     game_type = models.ForeignKey(GameType, on_delete=models.SET_NULL, null=True, db_column="game_type")
