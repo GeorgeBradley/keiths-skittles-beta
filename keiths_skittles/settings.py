@@ -65,12 +65,21 @@ CHANNEL_LAYERS = {
     },
 }
 
-DATABASES = {
-    "default": dj_database_url.config(
-        default=os.environ.get("DATABASE_URL")
-        # e.g. "postgres://postgres:password@aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
-    )
+DATABASES = {}
+
+DATABASES['default'] = dj_database_url.config(
+    default=os.environ.get("DATABASE_URL"),
+    conn_max_age=600
+)
+
+# Add OPTIONS dictionary
+DATABASES['default']['OPTIONS'] = {
+    'options': '-c default_transaction_read_only=off -c cursor_tuple_fraction=1.0'
 }
+
+# --- ADD THIS ---
+DATABASES['default']['DISABLE_SERVER_SIDE_CURSORS'] = True
+# --- END ADD ---
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
