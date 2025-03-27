@@ -1,1 +1,1 @@
-web: gunicorn keiths_skittles.asgi:application --bind 0.0.0.0:$PORT -k uvicorn.workers.UvicornWorker
+web: uvicorn keiths_skittles.asgi:application --host 0.0.0.0 --port $PORT
