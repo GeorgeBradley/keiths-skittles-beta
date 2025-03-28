@@ -395,7 +395,28 @@ GAMES_PER_PAGE = 5
 from django.template.loader import render_to_string  # Add this import at the top of your file
 
 def past_games(request):
+    # Safely extract and parse filter parameters
+    try:
+        opponent_id = int(request.GET.get('opponent', '').strip())
+    except (ValueError, TypeError):
+        opponent_id = None
+
+    try:
+        location_id = int(request.GET.get('location', '').strip())
+    except (ValueError, TypeError):
+        location_id = None
+
+    result_filter = request.GET.get('result', '').strip()
+
+    # Start with all games
     game_list = Game.objects.all().order_by("-date", "-id")
+
+    # Apply opponent/location filters by ID
+    if opponent_id:
+        game_list = game_list.filter(opponent_id=opponent_id)
+    if location_id:
+        game_list = game_list.filter(location_id=location_id)
+
     paginator = Paginator(game_list, GAMES_PER_PAGE)
     page_number = request.GET.get("page", 1)
 
@@ -424,22 +445,40 @@ def past_games(request):
             "result": result,
         })
 
+    # Apply result filter AFTER result calculation
+    if result_filter in ["Win", "Loss", "Draw"]:
+        past_games_data = [g for g in past_games_data if g["result"] == result_filter]
+
+    # Handle AJAX request for filtered page
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':
         try:
-            html = render_to_string('scores/_past_games_table_rows.html', {'past_games': past_games_data, 'user': request.user})
-            pagination_html = render_to_string('scores/_pagination_controls.html', {'page_obj': page_obj})
+            html = render_to_string('scores/_past_games_table_rows.html', {
+                'past_games': past_games_data,
+                'user': request.user
+            })
+            pagination_html = render_to_string('scores/_pagination_controls.html', {
+                'page_obj': page_obj
+            })
             return JsonResponse({
                 'html': html,
                 'pagination_html': pagination_html,
                 'current_page': page_obj.number
             })
         except Exception as e:
-            print(f"Error rendering AJAX response: {e}")
+            import traceback
+            print("AJAX filter error:", traceback.format_exc())
             return JsonResponse({'error': str(e)}, status=500)
 
     context = {
         "past_games": past_games_data,
         "page_obj": page_obj,
+        "all_opponents": Opponent.objects.all(),
+        "all_locations": Location.objects.all(),
+        "active_filters": {
+            "opponent": str(opponent_id) if opponent_id else '',
+            "location": str(location_id) if location_id else '',
+            "result": result_filter,
+        }
     }
     return render(request, "scores/past_games.html", context)
 @require_POST

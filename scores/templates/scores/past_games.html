@@ -5,6 +5,38 @@
 {% csrf_token %}
 <div class="container my-5">
   <h1>Past Games</h1>
+
+  <!-- Filter Controls -->
+  <div class="row mb-3">
+    <div class="col-md-3">
+      <select id="filter-opponent" class="form-select">
+        <option value="">All Opponents</option>
+        {% for opp in all_opponents %}
+          <option value="{{ opp.id }}" {% if active_filters.opponent == opp.id|stringformat:"s" %}selected{% endif %}>{{ opp.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <select id="filter-location" class="form-select">
+        <option value="">All Locations</option>
+        {% for loc in all_locations %}
+          <option value="{{ loc.id }}" {% if active_filters.location == loc.id|stringformat:"s" %}selected{% endif %}>{{ loc.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      <select id="filter-result" class="form-select">
+        <option value="">All Results</option>
+        <option value="Win" {% if active_filters.result == "Win" %}selected{% endif %}>Win</option>
+        <option value="Loss" {% if active_filters.result == "Loss" %}selected{% endif %}>Loss</option>
+        <option value="Draw" {% if active_filters.result == "Draw" %}selected{% endif %}>Draw</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <button id="apply-filters" class="btn btn-primary w-100">Apply Filters</button>
+    </div>
+  </div>
+
   <div class="table-responsive">
     <table class="table table-bordered table-striped">
       <thead class="table-dark">
@@ -26,9 +58,11 @@
       </tbody>
     </table>
   </div>
+
   <div id="pagination-controls-container" class="mt-4">
     {% include 'scores/_pagination_controls.html' with page_obj=page_obj %}
   </div>
+
   <div id="loading-indicator" style="display: none; text-align: center; margin-top: 20px;">
     <div class="spinner-border text-primary" role="status">
       <span class="visually-hidden">Loading...</span>
@@ -60,166 +94,160 @@
 <script>
 const isStaff = {{ user.is_staff|yesno:"true,false" }};
 let currentPage = {{ page_obj.number }};
-let deletedGames = []; // Array to store details of deleted games
+let deletedGames = [];
 
-document.addEventListener('DOMContentLoaded', function() {
-    const tableBody = document.getElementById('games-table-body');
-    const paginationContainer = document.getElementById('pagination-controls-container');
-    const loadingIndicator = document.getElementById('loading-indicator');
-    const deleteModal = new bootstrap.Modal(document.getElementById('deleteGameModal'));
-    const container = document.querySelector('.container');
+document.addEventListener('DOMContentLoaded', function () {
+  const tableBody = document.getElementById('games-table-body');
+  const paginationContainer = document.getElementById('pagination-controls-container');
+  const loadingIndicator = document.getElementById('loading-indicator');
+  const deleteModal = new bootstrap.Modal(document.getElementById('deleteGameModal'));
+  const container = document.querySelector('.container');
 
-    // Fetch and update table content and pagination
-    function fetchPage(page) {
-        const url = `?page=${page}`;  // Use relative URL
-        if (loadingIndicator) loadingIndicator.style.display = 'block';
-        if (tableBody) tableBody.style.opacity = '0.5';
-        
-        fetch(url, {
-            method: 'GET',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-                'Accept': 'application/json',
-            },
-        })
-        .then(response => {
-            if (!response.ok) {
-                return response.text().then(text => {
-                    console.error("Server response:", text);
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                });
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (tableBody) tableBody.innerHTML = data.html;
-            if (paginationContainer) paginationContainer.innerHTML = data.pagination_html;
-            currentPage = data.current_page;
-        })
-        .catch(error => {
-            console.error('Error fetching page:', error);
-            if (tableBody) tableBody.innerHTML = `<tr><td colspan="${isStaff ? 8 : 7}" class="text-center text-danger">Error loading games: ${error.message}. Please try again.</td></tr>`;
-        })
-        .finally(() => {
-            if (loadingIndicator) loadingIndicator.style.display = 'none';
-            if (tableBody) tableBody.style.opacity = '1';
-        });
+  function getFilters() {
+    return {
+      opponent: document.getElementById('filter-opponent').value.trim(),
+      location: document.getElementById('filter-location').value.trim(),
+      result: document.getElementById('filter-result').value
+    };
+  }
+
+  function fetchPage(page = 1, filters = getFilters()) {
+    const params = new URLSearchParams({ page, ...filters });
+    const url = `?${params.toString()}`;
+    loadingIndicator.style.display = 'block';
+    tableBody.style.opacity = '0.5';
+
+    fetch(url, {
+      method: 'GET',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json',
+      },
+    })
+    .then(response => {
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      return response.json();
+    })
+    .then(data => {
+      tableBody.innerHTML = data.html;
+      paginationContainer.innerHTML = data.pagination_html;
+      currentPage = data.current_page;
+    })
+    .catch(error => {
+      tableBody.innerHTML = `<tr><td colspan="${isStaff ? 8 : 7}" class="text-center text-danger">Error loading games: ${error.message}. Please try again.</td></tr>`;
+    })
+    .finally(() => {
+      loadingIndicator.style.display = 'none';
+      tableBody.style.opacity = '1';
+    });
+  }
+
+  paginationContainer.addEventListener('click', function (event) {
+    const link = event.target.closest('.ajax-page-link');
+    if (link) {
+      event.preventDefault();
+      const page = link.getAttribute('data-page');
+      fetchPage(page);
     }
+  });
 
-    // Handle pagination clicks
-    paginationContainer.addEventListener('click', function(event) {
-        const link = event.target.closest('.ajax-page-link');
-        if (link) {
-            event.preventDefault();
-            const page = link.getAttribute('data-page');
-            fetchPage(page);
-        }
-    });
+  document.getElementById('apply-filters').addEventListener('click', () => {
+    fetchPage(1);
+  });
 
-    // Handle delete link clicks to open modal
-    tableBody.addEventListener('click', function(event) {
-        if (event.target.classList.contains('delete-game')) {
-            event.preventDefault();
-            const link = event.target;
-            const gameId = link.getAttribute('data-game-id');
-            const opponent = link.getAttribute('data-opponent');
-            const date = link.getAttribute('data-date');
-            window.gameToDelete = { id: gameId, opponent: opponent, date: date };
-            document.getElementById('opponent-name').textContent = opponent;
-            document.getElementById('game-date').textContent = date;
-            deleteModal.show();
-        }
-    });
-
-    // Handle confirm delete
-    document.getElementById('confirm-delete').addEventListener('click', function() {
-        const gameToDelete = window.gameToDelete;
-        if (gameToDelete) {
-            const url = `/game/${gameToDelete.id}/delete/`;
-            const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
-            fetch(url, {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRFToken': csrfToken,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({})
-            })
-            .then(response => {
-                if (!response.ok) throw new Error('Failed to delete game');
-                return response.json();
-            })
-            .then(data => {
-                if (data.status === 'success') {
-                    // Add to deletedGames
-                    deletedGames.push({ opponent: gameToDelete.opponent, date: gameToDelete.date });
-                    // Show updated alert
-                    showDeletionAlert();
-                    // Refresh table
-                    fetchPage(currentPage);
-                    deleteModal.hide();
-                } else {
-                    showAlert(data.message, 'danger');
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                showAlert('Failed to delete game', 'danger');
-            });
-        }
-    });
-
-    // Show general alerts (e.g., errors)
-    function showAlert(message, type) {
-        const alertHtml = `
-            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        `;
-        container.insertAdjacentHTML('afterbegin', alertHtml);
+  tableBody.addEventListener('click', function (event) {
+    if (event.target.classList.contains('delete-game')) {
+      event.preventDefault();
+      const link = event.target;
+      const gameId = link.getAttribute('data-game-id');
+      const opponent = link.getAttribute('data-opponent');
+      const date = link.getAttribute('data-date');
+      window.gameToDelete = { id: gameId, opponent, date };
+      document.getElementById('opponent-name').textContent = opponent;
+      document.getElementById('game-date').textContent = date;
+      deleteModal.show();
     }
+  });
 
-    // Updated deletion alert (without accordion)
-    function showDeletionAlert() {
-        // Remove existing deletion alert
-        const existingAlert = document.querySelector('.deletion-alert');
-        if (existingAlert) existingAlert.remove();
-
-        let alertHtml;
-        if (deletedGames.length === 1) {
-            const game = deletedGames[0];
-            alertHtml = `
-                <div class="alert alert-success alert-dismissible fade show deletion-alert" role="alert">
-                    Successfully deleted game: ${game.opponent} on ${game.date}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            `;
-        } else if (deletedGames.length > 1) {
-            const gameListHtml = deletedGames.map(game => `<li>${game.opponent} on ${game.date}</li>`).join('');
-            alertHtml = `
-                <div class="alert alert-success alert-dismissible fade show deletion-alert" role="alert">
-                    Successfully deleted ${deletedGames.length} games:
-                    <ul>
-                        ${gameListHtml}
-                    </ul>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            `;
+  document.getElementById('confirm-delete').addEventListener('click', function () {
+    const gameToDelete = window.gameToDelete;
+    if (gameToDelete) {
+      const url = `/game/${gameToDelete.id}/delete/`;
+      const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRFToken': csrfToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({})
+      })
+      .then(response => {
+        if (!response.ok) throw new Error('Failed to delete game');
+        return response.json();
+      })
+      .then(data => {
+        if (data.status === 'success') {
+          deletedGames.push({ opponent: gameToDelete.opponent, date: gameToDelete.date });
+          showDeletionAlert();
+          fetchPage(currentPage);
+          deleteModal.hide();
         } else {
-            return; // No alert if no games deleted
+          showAlert(data.message, 'danger');
         }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        showAlert('Failed to delete game', 'danger');
+      });
+    }
+  });
 
-        container.insertAdjacentHTML('afterbegin', alertHtml);
+  function showAlert(message, type) {
+    const alertHtml = `
+      <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    `;
+    container.insertAdjacentHTML('afterbegin', alertHtml);
+  }
+
+  function showDeletionAlert() {
+    const existingAlert = document.querySelector('.deletion-alert');
+    if (existingAlert) existingAlert.remove();
+
+    let alertHtml;
+    if (deletedGames.length === 1) {
+      const game = deletedGames[0];
+      alertHtml = `
+        <div class="alert alert-success alert-dismissible fade show deletion-alert" role="alert">
+          Successfully deleted game: ${game.opponent} on ${game.date}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      `;
+    } else if (deletedGames.length > 1) {
+      const gameListHtml = deletedGames.map(game => `<li>${game.opponent} on ${game.date}</li>`).join('');
+      alertHtml = `
+        <div class="alert alert-success alert-dismissible fade show deletion-alert" role="alert">
+          Successfully deleted ${deletedGames.length} games:
+          <ul>${gameListHtml}</ul>
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      `;
+    } else {
+      return;
     }
 
-    // Clear deletedGames when alert is dismissed
-    container.addEventListener('closed.bs.alert', function(event) {
-        if (event.target.classList.contains('deletion-alert')) {
-            deletedGames = [];
-        }
-    });
+    container.insertAdjacentHTML('afterbegin', alertHtml);
+  }
+
+  container.addEventListener('closed.bs.alert', function (event) {
+    if (event.target.classList.contains('deletion-alert')) {
+      deletedGames = [];
+    }
+  });
 });
 </script>
 {% endblock %}
