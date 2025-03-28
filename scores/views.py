@@ -441,7 +441,6 @@ GAMES_PER_PAGE = 5
 # --- Past Games View (Minor adjustment for clarity) ---
 from django.template.loader import render_to_string  # Add this import at the top of your file
 
-@staff_member_required
 def past_games(request):
     try:
         opponent_id = int(request.GET.get('opponent', '').strip())
