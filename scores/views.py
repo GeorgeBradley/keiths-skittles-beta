@@ -8,6 +8,7 @@ from django.urls import reverse
 from django.db.models.functions import Coalesce
 from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+from itertools import zip_longest
 
 # --- CORRECTED IMPORT ---
 from .models import Game, Player, GamePlayer, Score, Opponent, Location, GameType # Added GameType
@@ -20,67 +21,114 @@ from .forms import (
     PlayerForm,
     RoundOptionsForm
 )
-# --- Helper function for Game State (Keep as is) ---
 def get_game_state(game, current_round, request):
-    # ... (your existing get_game_state logic) ...
-    own_team = list(game.game_players.filter(round_number=current_round, team="own").order_by("id"))
-    opp_team = list(game.game_players.filter(round_number=current_round, team="opp").order_by("id"))
+    own_team = list(
+        game.game_players
+        .filter(round_number=current_round, team="own")
+        .select_related("player")
+        .order_by("id")
+    )
+    opp_team = list(
+        game.game_players
+        .filter(round_number=current_round, team="opp")
+        .select_related("player")
+        .order_by("id")
+    )
+
     round_team_first_key = f"round_{current_round}_team_first"
     round_team_first = request.session.get(round_team_first_key, request.session.get("round_team_first", "own"))
+
+    # Interleave players based on team that goes first
     scoring_order = []
     if round_team_first == "own":
-        for i in range(max(len(own_team), len(opp_team))):
-            if i < len(own_team): scoring_order.append(own_team[i])
-            if i < len(opp_team): scoring_order.append(opp_team[i])
+        for own, opp in zip_longest(own_team, opp_team):
+            if own: scoring_order.append(own)
+            if opp: scoring_order.append(opp)
     else:
-        for i in range(max(len(own_team), len(opp_team))):
-            if i < len(opp_team): scoring_order.append(opp_team[i])
-            if i < len(own_team): scoring_order.append(own_team[i])
+        for opp, own in zip_longest(opp_team, own_team):
+            if opp: scoring_order.append(opp)
+            if own: scoring_order.append(own)
+
     total_turns = len(scoring_order)
-    if total_turns == 0: return {"message": f"Set up teams for Round {current_round}.", "current_player": None, "current_player_obj": None, "current_cycle": 1, "plus_minus": 0, "scores_data": [], "scores_qs": Score.objects.none(), "round_complete": False, "error": "No players found..."}
+
+    if total_turns == 0:
+        return {
+            "message": f"Set up teams for Round {current_round}.",
+            "current_player": None,
+            "current_player_obj": None,
+            "current_cycle": 1,
+            "plus_minus": 0,
+            "scores_data": [],
+            "scores_qs": Score.objects.none(),
+            "round_complete": False,
+            "error": "No players found..."
+        }
+
     scores_entered = Score.objects.filter(game=game, round_number=current_round).count()
-    cycles_per_round = game.cycles_per_round if game.cycles_per_round > 0 else 1
+    cycles_per_round = max(game.cycles_per_round, 1)
     current_cycle = (scores_entered // total_turns) + 1
     next_index = scores_entered % total_turns
-    message = ""; current_player = None; current_player_obj = None; round_complete = False
-    if current_cycle > cycles_per_round:
-        message = f"Round {current_round} Complete!"; round_complete = True
-    elif next_index < len(scoring_order):
-        current_player_obj = scoring_order[next_index]; current_player = current_player_obj.player
-        message = f"Enter score for {current_player.name} (Cycle {current_cycle} of Round {current_round})"
-    else: message = "Error determining next player."
-    own_team_ids = [gp.player.id for gp in own_team]; opp_team_ids = [gp.player.id for gp in opp_team]
-    own_total = Score.objects.filter(game=game, round_number=current_round, player__in=own_team_ids).aggregate(total=Coalesce(Sum("total"), 0))["total"]
-    opp_total = Score.objects.filter(game=game, round_number=current_round, player__in=opp_team_ids).aggregate(total=Coalesce(Sum("total"), 0))["total"]
-    plus_minus = own_total - opp_total
-    scores_qs = game.scores.filter(round_number=current_round).order_by("cycle_number", "id")
-    scores_data = list(scores_qs.values('player__name', 'cycle_number', 'roll1', 'roll2', 'roll3', 'total', 'id'))
-    # The second return statement here is unreachable code and can be removed
-    # return { ... }
-    return {"message": message, "current_player": current_player, "current_player_obj": current_player_obj, "current_cycle": current_cycle, "plus_minus": plus_minus, "scores_data": scores_data, "scores_qs": scores_qs, "round_complete": round_complete, "error": None}
-# --- End Helper Function ---
 
+    if current_cycle > cycles_per_round:
+        message = f"Round {current_round} Complete!"
+        round_complete = True
+        current_player = current_player_obj = None
+    elif next_index < total_turns:
+        current_player_obj = scoring_order[next_index]
+        current_player = current_player_obj.player
+        message = f"Enter score for {current_player.name} (Cycle {current_cycle} of Round {current_round})"
+        round_complete = False
+    else:
+        message = "Error determining next player."
+        current_player = current_player_obj = None
+        round_complete = False
+
+    own_team_ids = [gp.player.id for gp in own_team]
+    opp_team_ids = [gp.player.id for gp in opp_team]
+
+    scores_qs = game.scores.filter(round_number=current_round).select_related("player").order_by("cycle_number", "id")
+    own_total = scores_qs.filter(player_id__in=own_team_ids).aggregate(total=Coalesce(Sum("total"), 0))["total"]
+    opp_total = scores_qs.filter(player_id__in=opp_team_ids).aggregate(total=Coalesce(Sum("total"), 0))["total"]
+    plus_minus = own_total - opp_total
+
+    scores_data = list(scores_qs.values(
+        'player__name', 'cycle_number', 'roll1', 'roll2', 'roll3', 'total', 'id'
+    ))
+
+    return {
+        "message": message,
+        "current_player": current_player,
+        "current_player_obj": current_player_obj,
+        "current_cycle": current_cycle,
+        "plus_minus": plus_minus,
+        "scores_data": scores_data,
+        "scores_qs": scores_qs,
+        "round_complete": round_complete,
+        "error": None
+    }
+# --- End Optimized Helper Function ---
 @staff_member_required
 def start_game(request):
-    if request.method == "POST":
-        form = GameSetupForm(request.POST)
-        if form.is_valid():
-            game = form.save()
-            request.session[f"game_{game.id}_current_round"] = 1
-            request.session.pop("round_team_first", None)
-            for i in range(1, 10):
-                request.session.pop(f"round_{i}_team_first", None)
-            return redirect("live_game", game_id=game.id)
-    else:
-        form = GameSetupForm()
+    form = GameSetupForm(request.POST or None)
 
+    if request.method == "POST" and form.is_valid():
+        game = form.save()
+
+        # Initialize round-related session keys
+        request.session[f"game_{game.id}_current_round"] = 1
+        request.session.pop("round_team_first", None)
+        for i in range(1, 10):
+            request.session.pop(f"round_{i}_team_first", None)
+
+        return redirect("live_game", game_id=game.id)
+
+    # Proactively catch and log queryset evaluation errors (rare, but safe in dev)
     try:
-        _ = list(form.fields['opponent'].queryset)
-        _ = list(form.fields['location'].queryset)
-        _ = list(form.fields['game_type'].queryset)
+        for key in ["opponent", "location", "game_type"]:
+            _ = list(form.fields[key].queryset)
     except Exception as e:
-        print(f"Error evaluating form querysets in start_game view: {e}")
-        pass
+        print(f"[start_game] Error evaluating form querysets: {e}")
+
     return render(request, "scores/start_game.html", {"form": form})
 
 
@@ -89,203 +137,214 @@ def live_game(request, game_id):
     game = get_object_or_404(Game, id=game_id)
     current_round_session_key = f"game_{game_id}_current_round"
     current_round = request.session.get(current_round_session_key, 1)
-    if not isinstance(current_round, int): current_round = 1
-    # (Round sync logic...)
-    latest_score_round = Score.objects.filter(game=game).aggregate(Max("round_number"))["round_number__max"] or 0
-    latest_player_round = GamePlayer.objects.filter(game=game).aggregate(Max("round_number"))["round_number__max"] or 0
-    latest_round_in_db = max(latest_score_round, latest_player_round, 0)
-    if latest_round_in_db > 0 and latest_round_in_db > current_round:
-        current_round = latest_round_in_db; request.session[current_round_session_key] = current_round
-        print(f"Updated session round to {current_round} based on DB data.")
-    elif latest_round_in_db > 0 and current_round == 1 and latest_player_round >= 1:
-         current_round = latest_round_in_db; request.session[current_round_session_key] = current_round
-         print(f"Synced session round to {current_round} during load.")
+    if not isinstance(current_round, int):
+        current_round = 1
+
+    # Sync current round from DB
+    round_agg = Score.objects.filter(game=game).aggregate(max_score_round=Max("round_number"))
+    player_agg = GamePlayer.objects.filter(game=game).aggregate(max_player_round=Max("round_number"))
+    latest_round = max(round_agg["max_score_round"] or 0, player_agg["max_player_round"] or 0)
+
+    if latest_round > current_round:
+        current_round = latest_round
+        request.session[current_round_session_key] = current_round
+        print(f"Synced session round to {current_round} from DB")
+
     print(f"Live Game View - Game ID: {game_id}, Current Round: {current_round}")
 
     # --- Player Selection Logic ---
     if not game.game_players.filter(round_number=current_round, team="own").exists():
-        # (Your existing player selection logic - POST and GET handlers)
         if request.method == "POST" and "select_players" in request.POST:
             formset = GamePlayerFormSet(request.POST, queryset=GamePlayer.objects.none(), prefix='player')
             round_options_form = RoundOptionsForm(request.POST)
             if formset.is_valid() and round_options_form.is_valid():
-                instances = formset.save(commit=False)
-                for instance in instances:
-                    if instance.player: instance.game = game; instance.round_number = current_round; instance.team = "own"; instance.save()
-                own_team_players = game.game_players.filter(round_number=current_round, team="own").order_by("id")
-                for own_gp in own_team_players:
-                    opp_player_name = f"Opp. {own_gp.player.name}"
-                    if not game.game_players.filter(round_number=current_round, team="opp", player__name=opp_player_name).exists():
-                        opp_player, created = Player.objects.get_or_create(name=opp_player_name)
+                for instance in formset.save(commit=False):
+                    if instance.player:
+                        instance.game = game
+                        instance.round_number = current_round
+                        instance.team = "own"
+                        instance.save()
+
+                own_players = game.game_players.filter(round_number=current_round, team="own").select_related("player").order_by("id")
+                for gp in own_players:
+                    opp_name = f"Opp. {gp.player.name}"
+                    if not game.game_players.filter(round_number=current_round, team="opp", player__name=opp_name).exists():
+                        opp_player, _ = Player.objects.get_or_create(name=opp_name)
                         GamePlayer.objects.create(game=game, player=opp_player, round_number=current_round, team="opp")
+
                 request.session[f"round_{current_round}_team_first"] = round_options_form.cleaned_data["team_first_round"]
                 request.session[current_round_session_key] = current_round
                 return redirect("live_game", game_id=game.id)
-            else:
-                return render(request, "scores/select_players.html", {"formset": formset, "round_options_form": round_options_form, "game": game, "current_round": current_round})
-        else:
-            formset = GamePlayerFormSet(queryset=GamePlayer.objects.none(), prefix='player')
-            round_options_form = RoundOptionsForm(initial={'team_first_round': request.session.get(f"round_{current_round}_team_first", "own")})
-            return render(request, "scores/select_players.html", {"formset": formset, "round_options_form": round_options_form, "game": game, "current_round": current_round})
-    # --- End Player Selection ---
+            return render(request, "scores/select_players.html", {
+                "formset": formset,
+                "round_options_form": round_options_form,
+                "game": game,
+                "current_round": current_round
+            })
 
+        formset = GamePlayerFormSet(queryset=GamePlayer.objects.none(), prefix='player')
+        round_options_form = RoundOptionsForm(initial={
+            'team_first_round': request.session.get(f"round_{current_round}_team_first", "own")
+        })
+        return render(request, "scores/select_players.html", {
+            "formset": formset,
+            "round_options_form": round_options_form,
+            "game": game,
+            "current_round": current_round
+        })
 
     # --- AJAX Score Submission ---
     if request.method == "POST" and request.headers.get('x-requested-with') == 'XMLHttpRequest':
         state = get_game_state(game, current_round, request)
         current_player_obj = state.get("current_player_obj")
 
-        # Check if round already complete *before* this submission
         if state["round_complete"]:
-             already_complete_url = None
-             try:
-                 already_complete_url = reverse("round_complete", args=[game.id])
-             except NoReverseMatch as e: print(f"ERROR (AJAX - Already Complete): Failed reverse: {e}")
-             except Exception as e: print(f"ERROR (AJAX - Already Complete): Unexpected URL error: {e}")
-             return JsonResponse({"success": False, "error": "Round already complete.", "round_complete": True, "round_complete_url": already_complete_url }, status=400)
+            try:
+                complete_url = reverse("round_complete", args=[game.id])
+            except Exception as e:
+                print(f"ERROR (AJAX - Already Complete): {e}")
+                complete_url = None
+            return JsonResponse({
+                "success": False,
+                "error": "Round already complete.",
+                "round_complete": True,
+                "round_complete_url": complete_url
+            }, status=400)
 
         if not current_player_obj:
-             return JsonResponse({"success": False, "error": "Could not determine current player."}, status=400)
+            return JsonResponse({"success": False, "error": "Could not determine current player."}, status=400)
 
         score_form = ScoreForm(request.POST)
         if score_form.is_valid():
             try:
                 score = score_form.save(commit=False)
-                # (Assign game, player, round, cycle, calculate total)
-                score.game = game; score.player = current_player_obj.player; score.round_number = current_round; score.cycle_number = state["current_cycle"]
+                score.game = game
+                score.player = current_player_obj.player
+                score.round_number = current_round
+                score.cycle_number = state["current_cycle"]
                 score.total = (score.roll1 or 0) + (score.roll2 or 0) + (score.roll3 or 0)
                 score.save()
 
-                # Get new state AFTER saving
                 new_state = get_game_state(game, current_round, request)
-                is_complete_now = new_state["round_complete"] # Check if *this score* completed it
-                completion_url = None # Reset for this response
+                try:
+                    completion_url = reverse("round_complete", args=[game.id]) if new_state["round_complete"] else None
+                except Exception as e:
+                    print(f"ERROR (AJAX - Just Completed): {e}")
+                    completion_url = None
 
-                if is_complete_now:
-                    try:
-                        completion_url = reverse("round_complete", args=[game.id])
-                        print(f"DEBUG AJAX: Round COMPLETE. URL='{completion_url}'") # DEBUG
-                    except NoReverseMatch as e: print(f"ERROR (AJAX - Just Completed): Failed reverse: {e}")
-                    except Exception as e: print(f"ERROR (AJAX - Just Completed): Unexpected URL error: {e}")
-                else:
-                     print("DEBUG AJAX: Round NOT complete.") # DEBUG
-
-                response_data = {
-                    "success": True, # Score saved
-                    "message": new_state["message"], "plus_minus": new_state["plus_minus"],
+                return JsonResponse({
+                    "success": True,
+                    "message": new_state["message"],
+                    "plus_minus": new_state["plus_minus"],
                     "scores": new_state["scores_data"],
-                    "new_score": { 'player__name': score.player.name, 'cycle_number': score.cycle_number, 'roll1': score.roll1, 'roll2': score.roll2, 'roll3': score.roll3, 'total': score.total, 'id': score.id },
-                    "round_complete": is_complete_now,
-                    "round_complete_url": completion_url, # Pass generated URL (or None)
-                }
-                return JsonResponse(response_data)
-
+                    "new_score": {
+                        'player__name': score.player.name,
+                        'cycle_number': score.cycle_number,
+                        'roll1': score.roll1,
+                        'roll2': score.roll2,
+                        'roll3': score.roll3,
+                        'total': score.total,
+                        'id': score.id
+                    },
+                    "round_complete": new_state["round_complete"],
+                    "round_complete_url": completion_url
+                })
             except Exception as e:
-                 print(f"Error processing score submission: {e}")
-                 return JsonResponse({"success": False, "error": "Error processing score data."}, status=500)
-        else: # Form invalid
-            errors = score_form.errors.as_json(); return JsonResponse({"success": False, "errors": json.loads(errors)}, status=400)
+                print(f"Error processing score submission: {e}")
+                return JsonResponse({"success": False, "error": "Error processing score data."}, status=500)
+
+        return JsonResponse({
+            "success": False,
+            "errors": json.loads(score_form.errors.as_json())
+        }, status=400)
 
     # --- Initial Page Load (GET) ---
     state = get_game_state(game, current_round, request)
     score_form = ScoreForm()
-    is_complete_initial = state["round_complete"]
-    url_initial = None
 
-    if is_complete_initial: # Try generating URL if already complete on load
-        try:
-            url_initial = reverse("round_complete", args=[game.id])
-            print(f"DEBUG Initial Render: Round COMPLETE. URL='{url_initial}'") # DEBUG
-        except NoReverseMatch as e: print(f"ERROR (Initial Render): Failed reverse: {e}")
-        except Exception as e: print(f"ERROR (Initial Render): Unexpected URL error: {e}")
-    else:
-        print("DEBUG Initial Render: Round NOT complete.") # DEBUG
+    try:
+        complete_url = reverse("round_complete", args=[game.id]) if state["round_complete"] else None
+    except Exception as e:
+        print(f"ERROR (Initial Render): {e}")
+        complete_url = None
 
-    context = {
-        "game": game, "current_round": current_round, "score_form": score_form,
-        "message": state["message"], "scores": state["scores_qs"], "plus_minus": state["plus_minus"],
-        "round_complete": is_complete_initial, # Pass completion flag
-        "round_complete_url": url_initial,     # Pass URL (might be None)
+    return render(request, "scores/live_game.html", {
+        "game": game,
+        "current_round": current_round,
+        "score_form": score_form,
+        "message": state["message"],
+        "scores": state["scores_qs"],
+        "plus_minus": state["plus_minus"],
+        "round_complete": state["round_complete"],
+        "round_complete_url": complete_url,
         "error": state["error"]
-    }
-    return render(request, "scores/live_game.html", context)
-
+    })
 
 @staff_member_required
 def round_complete(request, game_id):
     game = get_object_or_404(Game, id=game_id)
-    current_round_session_key = f"game_{game_id}_current_round"
-    # Determine the round that was just completed from the session
-    completed_round = request.session.get(current_round_session_key, 1) # Default needed? Maybe raise error if not set?
+    session_key = f"game_{game_id}_current_round"
+    completed_round = request.session.get(session_key, 1)
 
     if request.method == "POST":
         if "next_round" in request.POST:
-            next_round_num = completed_round + 1
-            # Optional: Add check against game.total_rounds if applicable
-            # if next_round_num > game.total_rounds:
-            #     # Handle game end scenario differently?
-            #     return redirect("game_statistics", game_id=game.id)
-
-            request.session[current_round_session_key] = next_round_num
-            request.session.pop(f"round_{next_round_num}_team_first", None) # Clear team order for new round
-            print(f"Advancing game {game_id} to round {next_round_num}")
-            return redirect('live_game', game_id=game.id) # Go to live game for the new round
+            next_round = completed_round + 1
+            request.session[session_key] = next_round
+            request.session.pop(f"round_{next_round}_team_first", None)
+            print(f"Advancing game {game_id} to round {next_round}")
+            return redirect("live_game", game_id=game.id)
 
         elif "end_game" in request.POST:
             print(f"Ending game {game_id} after round {completed_round}.")
-            # Optional: Clear game-specific session data here if desired
-            # request.session.pop(current_round_session_key, None)
-            # ... clear other related keys ...
-            return redirect("game_statistics", game_id=game.id) # Go to stats page
+            return redirect("game_statistics", game_id=game.id)
 
-    # Context needed for the simple template: just the game object
-    context = {
+    return render(request, "scores/round_complete.html", {
         "game": game,
-        "completed_round": completed_round # Pass for potential display if template changes later
-    }
-    # Render using your specific template name if different, otherwise default path is fine.
-    return render(request, "scores/round_complete.html", context)
+        "completed_round": completed_round
+    })
+
+
 @staff_member_required
 def add_player(request):
-    if request.method == "POST":
-        form = PlayerForm(request.POST)
-        if form.is_valid():
-            form.save()
-            return redirect("add_player") # Redirect to clear form
-    else:
-        form = PlayerForm()
-    # Exclude auto-generated opponent players from the list displayed
+    form = PlayerForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        return redirect("add_player")
+
     players = Player.objects.exclude(name__startswith="Opp.").order_by("name")
-    return render(request, "scores/add_player.html", {"form": form, "players": players})
+    return render(request, "scores/add_player.html", {
+        "form": form,
+        "players": players
+    })
+
 
 
 # --- Game Statistics View (Unchanged from your provided code) ---
+from django.db.models import Prefetch
+
 def game_statistics(request, game_id):
     game = get_object_or_404(Game, id=game_id)
 
-    # Cycle totals
-    cycle_totals = Score.objects.filter(game=game)\
-        .values("cycle_number")\
-        .annotate(cycle_total=Sum("total"))\
-        .order_by("cycle_number")
+    scores_qs = Score.objects.filter(game=game)
 
-    # Round totals
-    round_totals = Score.objects.filter(game=game)\
-        .values("round_number")\
-        .annotate(round_total=Sum("total"))\
-        .order_by("round_number")
+    # Preload GamePlayer once to avoid repeated queries
+    game_players = GamePlayer.objects.filter(game=game).select_related("player")
+    own_ids = set(p.player_id for p in game_players if p.team == "own")
+    opp_ids = set(p.player_id for p in game_players if p.team == "opp")
 
-    # Overall team totals using game_players records (more robust if players change)
-    # Get all player IDs associated with the game for each team across all rounds
-    own_ids = list(GamePlayer.objects.filter(game=game, team="own").values_list("player_id", flat=True).distinct())
-    opp_ids = list(GamePlayer.objects.filter(game=game, team="opp").values_list("player_id", flat=True).distinct())
+    # Precompute player score totals
+    all_player_totals = scores_qs.values("player__id", "player__name") \
+        .annotate(player_total=Coalesce(Sum("total"), 0)) \
+        .order_by("player__name")
 
-    own_total = Score.objects.filter(game=game, player__in=own_ids)\
-        .aggregate(total=Coalesce(Sum("total"), 0))["total"]
-    opp_total = Score.objects.filter(game=game, player__in=opp_ids)\
-        .aggregate(total=Coalesce(Sum("total"), 0))["total"]
+    own_totals_dict = {p["player__id"]: p for p in all_player_totals if p["player__id"] in own_ids}
+    opp_totals_dict = {p["player__id"]: p for p in all_player_totals if p["player__id"] in opp_ids}
 
-    # Overall game result with color-coding
+    # Totals
+    own_total = sum(p["player_total"] for p in own_totals_dict.values())
+    opp_total = sum(p["player_total"] for p in opp_totals_dict.values())
+
+    # Result
     if own_total > opp_total:
         overall_result = {"result": "Win", "color": "green"}
     elif own_total < opp_total:
@@ -293,100 +352,88 @@ def game_statistics(request, game_id):
     else:
         overall_result = {"result": "Draw", "color": "gray"}
 
-    # Detailed player stats: compute total, count of score entries (cycles), and average per cycle.
-    player_stats = Score.objects.filter(game=game)\
-        .values("player__id", "player__name")\
+    # Round & cycle totals
+    round_totals = scores_qs.values("round_number").annotate(round_total=Sum("total")).order_by("round_number")
+    cycle_totals = scores_qs.values("cycle_number").annotate(cycle_total=Sum("total")).order_by("cycle_number")
+
+    # Player stats
+    player_stats = scores_qs.values("player__id", "player__name") \
         .annotate(
             total_score=Coalesce(Sum("total"), 0),
             num_cycles=Count("id")
-        ).annotate(
-            # Handle potential division by zero if num_cycles is 0 (though unlikely if they have scores)
-            average=ExpressionWrapper(
-                Case(
-                    When(num_cycles=0, then=Value(0.0)),
-                    default=F("total_score") * 1.0 / F("num_cycles"), # Ensure float division
+        ) \
+        .annotate(
+            average=Case(
+                When(num_cycles=0, then=Value(0.0)),
+                default=ExpressionWrapper(
+                    F("total_score") * 1.0 / F("num_cycles"),
                     output_field=FloatField()
                 ),
                 output_field=FloatField()
             )
-        ).order_by("-total_score")
+        ) \
+        .order_by("-total_score")
 
-    # Determine highest scorer(s) by player ID
-    highest_total = player_stats.aggregate(max_total=Max("total_score"))["max_total"] or 0
-    highest_scorers = [p["player__id"] for p in player_stats if p["total_score"] == highest_total] if highest_total > 0 else []
+    highest_total = max((p["total_score"] for p in player_stats), default=0)
+    highest_scorers = [p["player__id"] for p in player_stats if p["total_score"] == highest_total]
 
-    # For the "Player Totals (Team Comparison)" table:
-    # Calculate totals per player, grouping by player
-    all_player_totals = Score.objects.filter(game=game)\
-        .values("player__id", "player__name")\
-        .annotate(player_total=Coalesce(Sum("total"), 0))\
-        .order_by("player__name") # Order consistently
-
-    # Separate into own and opp based on the distinct lists derived earlier
-    own_totals_dict = {p['player__id']: p for p in all_player_totals if p['player__id'] in own_ids}
-    opp_totals_dict = {p['player__id']: p for p in all_player_totals if p['player__id'] in opp_ids}
-
-    # Create pairs based on "Opp. Player Name" convention
+    # Match own/opp players by name
     zipped_totals = []
     processed_opp_ids = set()
-    for own_id in own_ids:
-        own_player_data = own_totals_dict.get(own_id)
-        if not own_player_data: continue # Should exist, but safety check
 
-        own_name = own_player_data['player__name']
+    for own_id, own_data in own_totals_dict.items():
+        own_name = own_data["player__name"]
         expected_opp_name = f"Opp. {own_name}"
+        matched_opp = next((v for k, v in opp_totals_dict.items() if v["player__name"] == expected_opp_name), None)
+        if matched_opp:
+            processed_opp_ids.add(matched_opp["player__id"])
+        zipped_totals.append({"own": own_data, "opp": matched_opp})
 
-        # Find the corresponding opponent
-        opp_player_data = None
-        for opp_id, opp_data in opp_totals_dict.items():
-             if opp_data['player__name'] == expected_opp_name:
-                 opp_player_data = opp_data
-                 processed_opp_ids.add(opp_id) # Mark as processed
-                 break
-
-        zipped_totals.append({
-            "own": own_player_data,
-            "opp": opp_player_data # Will be None if no matching Opp. player found
-        })
-
-    # Add any remaining opp players that weren't matched (e.g., if naming convention failed or different numbers of players)
+    # Unmatched opponents
     for opp_id, opp_data in opp_totals_dict.items():
         if opp_id not in processed_opp_ids:
-             zipped_totals.append({
-                 "own": None, # No corresponding own player based on name match
-                 "opp": opp_data
-             })
+            zipped_totals.append({"own": None, "opp": opp_data})
 
-
-    # Score differentials per round (Max score - Min score in that round) - This seems less useful than team diff per round.
-    # Let's calculate Own Total vs Opp Total per round instead.
+    # Round differentials
     round_diffs = []
-    max_round = game.scores.aggregate(Max("round_number"))["round_number__max"] or 0
-    for r in range(1, max_round + 1):
-        own_round_ids = list(GamePlayer.objects.filter(game=game, team="own", round_number=r).values_list("player_id", flat=True))
-        opp_round_ids = list(GamePlayer.objects.filter(game=game, team="opp", round_number=r).values_list("player_id", flat=True))
+    max_round = scores_qs.aggregate(Max("round_number"))["round_number__max"] or 0
 
-        own_round_total = Score.objects.filter(game=game, round_number=r, player__in=own_round_ids).aggregate(total=Coalesce(Sum("total"),0))['total']
-        opp_round_total = Score.objects.filter(game=game, round_number=r, player__in=opp_round_ids).aggregate(total=Coalesce(Sum("total"),0))['total']
+    # Prefetch GamePlayers for all rounds
+    round_gameplayers = GamePlayer.objects.filter(game=game).values("player_id", "team", "round_number")
+    gameplayer_map = {}
+    for entry in round_gameplayers:
+        key = (entry["round_number"], entry["team"])
+        gameplayer_map.setdefault(key, []).append(entry["player_id"])
+
+    for r in range(1, max_round + 1):
+        own_ids_r = gameplayer_map.get((r, "own"), [])
+        opp_ids_r = gameplayer_map.get((r, "opp"), [])
+
+        own_total_r = scores_qs.filter(round_number=r, player__in=own_ids_r).aggregate(
+            total=Coalesce(Sum("total"), 0)
+        )["total"]
+        opp_total_r = scores_qs.filter(round_number=r, player__in=opp_ids_r).aggregate(
+            total=Coalesce(Sum("total"), 0)
+        )["total"]
+
         round_diffs.append({
             "round_number": r,
-            "own_total": own_round_total,
-            "opp_total": opp_round_total,
-            "differential": own_round_total - opp_round_total
+            "own_total": own_total_r,
+            "opp_total": opp_total_r,
+            "differential": own_total_r - opp_total_r
         })
 
     context = {
         "game": game,
-        "cycle_totals": cycle_totals, # Aggregated across all rounds
-        "round_totals": round_totals, # Aggregated across all players
-        "own_total": own_total, # Overall game total
-        "opp_total": opp_total, # Overall game total
+        "cycle_totals": cycle_totals,
+        "round_totals": round_totals,
+        "own_total": own_total,
+        "opp_total": opp_total,
         "overall_result": overall_result,
-        "player_stats": player_stats, # Overall per player
+        "player_stats": player_stats,
         "highest_scorers": highest_scorers,
-        # "score_diff": score_diff, # Replaced this
-        "round_diffs": round_diffs, # Per-round team differential
-        "zipped_totals": zipped_totals, # Paired player totals
+        "round_diffs": round_diffs,
+        "zipped_totals": zipped_totals,
     }
     return render(request, "scores/game_stats.html", context)
 
@@ -394,8 +441,8 @@ GAMES_PER_PAGE = 5
 # --- Past Games View (Minor adjustment for clarity) ---
 from django.template.loader import render_to_string  # Add this import at the top of your file
 
+@staff_member_required
 def past_games(request):
-    # Safely extract and parse filter parameters
     try:
         opponent_id = int(request.GET.get('opponent', '').strip())
     except (ValueError, TypeError):
@@ -408,10 +455,7 @@ def past_games(request):
 
     result_filter = request.GET.get('result', '').strip()
 
-    # Start with all games
-    game_list = Game.objects.all().order_by("-date", "-id")
-
-    # Apply opponent/location filters by ID
+    game_list = Game.objects.select_related('opponent', 'location').order_by("-date", "-id")
     if opponent_id:
         game_list = game_list.filter(opponent_id=opponent_id)
     if location_id:
@@ -422,48 +466,41 @@ def past_games(request):
 
     try:
         page_obj = paginator.page(page_number)
-    except PageNotAnInteger:
+    except (PageNotAnInteger, EmptyPage):
         page_obj = paginator.page(1)
-    except EmptyPage:
-        page_obj = paginator.page(paginator.num_pages)
+
+    # Preload all GamePlayer and Score data for games on current page
+    game_ids = [g.id for g in page_obj.object_list]
+    all_players = GamePlayer.objects.filter(game_id__in=game_ids).values('game_id', 'team', 'player_id')
+    all_scores = Score.objects.filter(game_id__in=game_ids).values('game_id', 'player_id')
+
+    scores_by_game_team = {}
+    for score in all_scores:
+        game_id = score['game_id']
+        player_id = score['player_id']
+        if game_id not in scores_by_game_team:
+            scores_by_game_team[game_id] = {'own': set(), 'opp': set()}
+        for player in all_players:
+            if player['game_id'] == game_id and player['player_id'] == player_id:
+                scores_by_game_team[game_id][player['team']].add(player_id)
 
     past_games_data = []
-
     for game in page_obj.object_list:
-        own_ids = list(GamePlayer.objects.filter(game=game, team="own").values_list("player_id", flat=True).distinct())
-        opp_ids = list(GamePlayer.objects.filter(game=game, team="opp").values_list("player_id", flat=True).distinct())
-
+        own_ids = scores_by_game_team.get(game.id, {}).get('own', set())
+        opp_ids = scores_by_game_team.get(game.id, {}).get('opp', set())
         own_total = Score.objects.filter(game=game, player_id__in=own_ids).aggregate(total=Coalesce(Sum("total"), 0))["total"]
         opp_total = Score.objects.filter(game=game, player_id__in=opp_ids).aggregate(total=Coalesce(Sum("total"), 0))["total"]
-
         result = "Win" if own_total > opp_total else "Loss" if own_total < opp_total else "Draw"
+        past_games_data.append({"game": game, "own_total": own_total, "opp_total": opp_total, "result": result})
 
-        past_games_data.append({
-            "game": game,
-            "own_total": own_total,
-            "opp_total": opp_total,
-            "result": result,
-        })
-
-    # Apply result filter AFTER result calculation
     if result_filter in ["Win", "Loss", "Draw"]:
         past_games_data = [g for g in past_games_data if g["result"] == result_filter]
 
-    # Handle AJAX request for filtered page
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':
         try:
-            html = render_to_string('scores/_past_games_table_rows.html', {
-                'past_games': past_games_data,
-                'user': request.user
-            })
-            pagination_html = render_to_string('scores/_pagination_controls.html', {
-                'page_obj': page_obj
-            })
-            return JsonResponse({
-                'html': html,
-                'pagination_html': pagination_html,
-                'current_page': page_obj.number
-            })
+            html = render_to_string('scores/_past_games_table_rows.html', {'past_games': past_games_data, 'user': request.user})
+            pagination_html = render_to_string('scores/_pagination_controls.html', {'page_obj': page_obj})
+            return JsonResponse({'html': html, 'pagination_html': pagination_html, 'current_page': page_obj.number})
         except Exception as e:
             import traceback
             print("AJAX filter error:", traceback.format_exc())
@@ -481,31 +518,37 @@ def past_games(request):
         }
     }
     return render(request, "scores/past_games.html", context)
+
 @require_POST
 @staff_member_required
 def delete_game(request, game_id):
+    is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest"
+    game = get_object_or_404(Game, pk=game_id)
+
     try:
-        game = get_object_or_404(Game, pk=game_id)
         game.delete()
-        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
-            return JsonResponse({'status': 'success', 'message': 'Game deleted successfully'})
-        return redirect(reverse('past_games'))
+        response_data = {'status': 'success', 'message': 'Game deleted successfully'}
+        status_code = 200
     except Exception as e:
-        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
-            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
-        return redirect(reverse('past_games'))
-# Make sure you have a game_detail view referenced in round_complete.html if needed
+        response_data = {'status': 'error', 'message': str(e)}
+        status_code = 500
+
+    if is_ajax:
+        return JsonResponse(response_data, status=status_code)
+    return redirect('past_games')
 # Example:
 def game_detail(request, game_id):
-     game = get_object_or_404(Game, id=game_id)
-     # Potentially show overview, links to stats, live game etc.
-     return render(request, "scores/game_detail.html", {"game": game})
+    game = get_object_or_404(
+        Game.objects.prefetch_related("game_players__player", "scores"),
+        id=game_id
+    )
+    return render(request, "scores/game_detail.html", {"game": game})
 
 def player_statistics(request):
     players = Player.objects.exclude(name__startswith="Opp.").order_by("name")
     selected_player = None
     stats = {}
-    chart_data_json = None # <<<<< Initialize chart_data_json to None here
+    chart_data_json = None  # <<<<< Initialize chart_data_json to None here
 
     player_id = request.GET.get('player_id')
 
@@ -517,47 +560,137 @@ def player_statistics(request):
 
             if player_scores.exists():
                 # --- Stats Calculations ---
-                # ... (keep all your stat calculation logic) ...
-                total_score_agg=player_scores.aggregate(total_score=Coalesce(Sum('total'),0)); stats['total_score']=total_score_agg['total_score']; stats['total_cycles']=player_scores.count(); rolls_agg=player_scores.aggregate(r1=Count('roll1'),r2=Count('roll2'),r3=Count('roll3')); stats['total_rolls']=rolls_agg['r1']+rolls_agg['r2']+rolls_agg['r3']; stats['avg_per_cycle']=(stats['total_score']/stats['total_cycles']) if stats['total_cycles']>0 else 0; stats['avg_per_roll']=(stats['total_score']/stats['total_rolls']) if stats['total_rolls']>0 else 0; stats['zero_cycle_count']=player_scores.filter(total=0).count(); zero_rolls_agg=player_scores.aggregate(z1=Count('id',filter=Q(roll1=0)),z2=Count('id',filter=Q(roll2=0)),z3=Count('id',filter=Q(roll3=0))); stats['total_zero_rolls']=zero_rolls_agg['z1']+zero_rolls_agg['z2']+zero_rolls_agg['z3']; stats['zero_roll_percentage']=(stats['total_zero_rolls']/stats['total_rolls']*100) if stats['total_rolls']>0 else 0; stats['highest_cycle_score']=player_scores.aggregate(max_c=Max('total'))['max_c']; roll_max=player_scores.aggregate(max_r1=Max('roll1'),max_r2=Max('roll2'),max_r3=Max('roll3')); stats['highest_roll_score']=max(roll_max['max_r1'] or 0,roll_max['max_r2'] or 0,roll_max['max_r3'] or 0)
+                total_score_agg = player_scores.aggregate(total_score=Coalesce(Sum('total'), 0))
+                stats['total_score'] = total_score_agg['total_score']
+                stats['total_cycles'] = player_scores.count()
+
+                rolls_agg = player_scores.aggregate(
+                    r1=Count('roll1'),
+                    r2=Count('roll2'),
+                    r3=Count('roll3')
+                )
+                stats['total_rolls'] = rolls_agg['r1'] + rolls_agg['r2'] + rolls_agg['r3']
+
+                stats['avg_per_cycle'] = (
+                    stats['total_score'] / stats['total_cycles']
+                    if stats['total_cycles'] > 0 else 0
+                )
+                stats['avg_per_roll'] = (
+                    stats['total_score'] / stats['total_rolls']
+                    if stats['total_rolls'] > 0 else 0
+                )
+
+                stats['zero_cycle_count'] = player_scores.filter(total=0).count()
+
+                zero_rolls_agg = player_scores.aggregate(
+                    z1=Count('id', filter=Q(roll1=0)),
+                    z2=Count('id', filter=Q(roll2=0)),
+                    z3=Count('id', filter=Q(roll3=0))
+                )
+                stats['total_zero_rolls'] = (
+                    zero_rolls_agg['z1'] + zero_rolls_agg['z2'] + zero_rolls_agg['z3']
+                )
+                stats['zero_roll_percentage'] = (
+                    stats['total_zero_rolls'] / stats['total_rolls'] * 100
+                    if stats['total_rolls'] > 0 else 0
+                )
+
+                stats['highest_cycle_score'] = player_scores.aggregate(max_c=Max('total'))['max_c']
+
+                roll_max = player_scores.aggregate(
+                    max_r1=Max('roll1'),
+                    max_r2=Max('roll2'),
+                    max_r3=Max('roll3')
+                )
+                stats['highest_roll_score'] = max(
+                    roll_max.get('max_r1') or 0,
+                    roll_max.get('max_r2') or 0,
+                    roll_max.get('max_r3') or 0
+                )
 
                 # --- Improvement Trend & Chart Data ---
-                improvement_data_qs = list(player_scores.values('game__id','game__date', 'game__opponent__name', 'game__location__name').annotate(game_avg=Avg('total')).order_by('game__date'))
+                improvement_data_qs = list(
+                    player_scores.values(
+                        'game__id', 'game__date',
+                        'game__opponent__name', 'game__location__name'
+                    )
+                    .annotate(game_avg=Avg('total'))
+                    .order_by('game__date')
+                )
                 stats['improvement_trend'] = improvement_data_qs
 
                 if improvement_data_qs:
-                    chart_data = {'labels': [item['game__date'].strftime('%Y-%m-%d') for item in improvement_data_qs], 'data': [float(item['game_avg']) for item in improvement_data_qs]}
-                    chart_data_json = json.dumps(chart_data) # Assigned value
-                    # No 'else' needed here, chart_data_json remains None if no data
+                    chart_data = {
+                        'labels': [item['game__date'].strftime('%Y-%m-%d') for item in improvement_data_qs],
+                        'data': [float(item['game_avg']) for item in improvement_data_qs]
+                    }
+                    chart_data_json = json.dumps(chart_data)
 
-            # --- Game Participation & W/L/D ---
-            # ... (keep W/L/D calculation logic) ...
-            distinct_game_ids=player_games.values_list('game_id',flat=True).distinct(); stats['games_participated']=len(distinct_game_ids); stats['wins']=0; stats['losses']=0; stats['draws']=0; all_games_data={g.id: g for g in Game.objects.filter(id__in=distinct_game_ids)};
+            # --- Game Participation & W/L/D (Optimized) ---
+            distinct_game_ids = list(player_games.values_list('game_id', flat=True).distinct())
+            stats['games_participated'] = len(distinct_game_ids)
+            stats['wins'] = 0
+            stats['losses'] = 0
+            stats['draws'] = 0
+
+            # Fetch all relevant game data in bulk
+            all_games_data = {
+                g.id: g for g in Game.objects.filter(id__in=distinct_game_ids)
+            }
+
+            # Get all GamePlayers for these games
+            all_gameplayers = GamePlayer.objects.filter(game_id__in=distinct_game_ids)
+            game_team_map = {'own': {}, 'opp': {}}
+            for gp in all_gameplayers:
+                game_team_map.setdefault(gp.team, {}).setdefault(gp.game_id, set()).add(gp.player_id)
+
+            # Get all total scores per game+player in one query
+            score_totals = Score.objects.filter(game_id__in=distinct_game_ids) \
+                .values('game_id', 'player_id') \
+                .annotate(total=Coalesce(Sum('total'), 0))
+
+            # Organize scores by game and team
+            game_team_totals = {gid: {'own': 0, 'opp': 0} for gid in distinct_game_ids}
+            for s in score_totals:
+                gid = s['game_id']
+                pid = s['player_id']
+                total = s['total']
+                if pid in game_team_map.get('own', {}).get(gid, set()):
+                    game_team_totals[gid]['own'] += total
+                elif pid in game_team_map.get('opp', {}).get(gid, set()):
+                    game_team_totals[gid]['opp'] += total
+
+            # Now determine W/L/D based on team scores
             for g_id in distinct_game_ids:
-                game_obj=all_games_data.get(g_id);
-                if not game_obj: continue;
-                game_own_ids=list(GamePlayer.objects.filter(game_id=g_id,team="own").values_list("player_id",flat=True).distinct()); game_opp_ids=list(GamePlayer.objects.filter(game_id=g_id,team="opp").values_list("player_id",flat=True).distinct()); game_own_total=Score.objects.filter(game_id=g_id,player__in=game_own_ids).aggregate(total=Coalesce(Sum("total"),0))["total"]; game_opp_total=Score.objects.filter(game_id=g_id,player__in=game_opp_ids).aggregate(total=Coalesce(Sum("total"),0))["total"]; is_own_team_player=player_games.filter(game_id=g_id,team='own').exists();
+                game_obj = all_games_data.get(g_id)
+                if not game_obj:
+                    continue
+
+                own_total = game_team_totals[g_id]['own']
+                opp_total = game_team_totals[g_id]['opp']
+                is_own_team_player = player_games.filter(game_id=g_id, team='own').exists()
+
                 if is_own_team_player:
-                    if game_own_total>game_opp_total: stats['wins']+=1
-                    elif game_own_total<game_opp_total: stats['losses']+=1
-                    else: stats['draws']+=1
+                    if own_total > opp_total:
+                        stats['wins'] += 1
+                    elif own_total < opp_total:
+                        stats['losses'] += 1
+                    else:
+                        stats['draws'] += 1
 
         except Player.DoesNotExist:
             selected_player = None
-            # chart_data_json remains None (its initial value)
         except Exception as e:
             print(f"Error calculating stats for player {player_id}: {e}")
-            # chart_data_json remains None (its initial value)
 
-    # --- Context ---
-    # Now chart_data_json will always have a value (either None or a JSON string)
     context = {
         'players': players,
         'selected_player': selected_player,
         'stats': stats,
-        'chart_data_json': chart_data_json # Pass the value (could be None)
+        'chart_data_json': chart_data_json
     }
     return render(request, 'scores/player_statistics.html', context)
-# --- End Player Statistics View ---
+
 
 @require_POST # Ensures this view only accepts POST requests
 @staff_member_required # Or login_required, depending on your auth needs
