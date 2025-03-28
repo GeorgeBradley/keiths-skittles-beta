@@ -407,19 +407,22 @@ def past_games(request):
         page_obj = paginator.page(paginator.num_pages)
 
     past_games_data = []
-    game_ids_on_page = [game.id for game in page_obj.object_list]
-    scores_agg = Score.objects.filter(game_id__in=game_ids_on_page).values('game_id').annotate(
-        own_total=Coalesce(Sum('total', filter=Q(player__gameplayer__team='own')), 0),
-        opp_total=Coalesce(Sum('total', filter=Q(player__gameplayer__team='opp')), 0)
-    ).values('game_id', 'own_total', 'opp_total')
-    scores_dict = {item['game_id']: item for item in scores_agg}
 
     for game in page_obj.object_list:
-        game_scores = scores_dict.get(game.id, {'own_total': 0, 'opp_total': 0})
-        own_total = game_scores['own_total']
-        opp_total = game_scores['opp_total']
+        own_ids = list(GamePlayer.objects.filter(game=game, team="own").values_list("player_id", flat=True).distinct())
+        opp_ids = list(GamePlayer.objects.filter(game=game, team="opp").values_list("player_id", flat=True).distinct())
+
+        own_total = Score.objects.filter(game=game, player_id__in=own_ids).aggregate(total=Coalesce(Sum("total"), 0))["total"]
+        opp_total = Score.objects.filter(game=game, player_id__in=opp_ids).aggregate(total=Coalesce(Sum("total"), 0))["total"]
+
         result = "Win" if own_total > opp_total else "Loss" if own_total < opp_total else "Draw"
-        past_games_data.append({"game": game, "result": result, "own_total": own_total, "opp_total": opp_total})
+
+        past_games_data.append({
+            "game": game,
+            "own_total": own_total,
+            "opp_total": opp_total,
+            "result": result,
+        })
 
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':
         try:
@@ -434,9 +437,11 @@ def past_games(request):
             print(f"Error rendering AJAX response: {e}")
             return JsonResponse({'error': str(e)}, status=500)
 
-    context = {"past_games": past_games_data, "page_obj": page_obj}
+    context = {
+        "past_games": past_games_data,
+        "page_obj": page_obj,
+    }
     return render(request, "scores/past_games.html", context)
-    
 @require_POST
 @staff_member_required
 def delete_game(request, game_id):
