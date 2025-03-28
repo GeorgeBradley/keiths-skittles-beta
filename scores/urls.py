@@ -23,7 +23,7 @@ urlpatterns = [
     path("game/<int:game_id>/delete/", views.delete_game, name="delete_game"), # Example: Nesting delete
 
     path("players/", views.add_player, name="add_player"),
-    path("past-games/", views.past_games, name="past_games"), # You might remove this if '' points here
+    path('past-games/', views.past_games, name='past_games'),
     path("player-stats/", views.player_statistics, name="player_statistics"),
     path('opponent-stats/', views.opponent_statistics, name='opponent_statistics'),
 

@@ -1,0 +1,357 @@
+/* =========================================
+   Custom Theme - Keith's Skittles (Soft Teal/Green - Light Nav)
+   Font: Inter
+   ========================================= */
+
+/* --- 1. Variables --- */
+:root {
+  --font-family-sans-serif: 'Inter', sans-serif;
+  --bs-body-font-family: var(--font-family-sans-serif);
+
+  /* --- NEW Primary Color Theme (Soft Teal/Green) --- */
+  --bs-primary: #20c997;       /* Bootstrap Teal */
+  --bs-primary-rgb: 32, 201, 151;
+  --bs-primary-darker: #157347;  /* Bootstrap Dark Green (good contrast) */
+  --bs-primary-lighter: #66d9b8; /* Lighter Teal */
+  /* --- END NEW Theme --- */
+
+  /* Link colors */
+  --bs-link-color: var(--bs-primary);
+  --bs-link-hover-color: var(--bs-primary-darker);
+
+  /* Borders and Radii */
+  --bs-border-radius: 0.3rem; /* Slightly softer radius */
+  --bs-border-radius-sm: 0.2rem;
+  --bs-border-radius-lg: 0.5rem;
+  --bs-border-color: #dee2e6; /* Default border color */
+  --table-border-color: #e9ecef; /* Lighter border for tables */
+
+  /* Background and Text Defaults */
+  --bg-light-shade: #f8f9fa;
+  --bg-white: #ffffff;
+  --text-dark-shade: #212529;
+  --text-muted-shade: #6c757d;
+}
+
+/* --- 2. Global Styles --- */
+body {
+  font-family: var(--bs-body-font-family);
+  background-color: var(--bg-light-shade);
+  color: var(--text-dark-shade);
+  line-height: 1.6;
+  font-size: 0.98rem; /* Optional: Slightly adjust base font size */
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600; /* Inter looks good slightly bolder */
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+  color: var(--bs-primary-darker); /* Use darker primary for headings */
+}
+
+a {
+  transition: color 0.2s ease-in-out;
+}
+
+/* --- 3. Component Overrides --- */
+
+/* Navbar (Light Theme) */
+.navbar {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  background-color: var(--bg-white) !important; /* Force white background */
+}
+.navbar-light .navbar-brand {
+    font-weight: 600;
+    color: var(--bs-primary) !important;
+}
+.navbar-light .navbar-brand:hover {
+    color: var(--bs-primary-darker) !important;
+}
+.navbar-light .navbar-nav .nav-link {
+  color: rgba(0, 0, 0, 0.7);
+  transition: color 0.2s ease;
+  padding: 0.7rem 0.5rem; /* Adjust padding slightly */
+  margin: 0 0.25rem;
+  border-radius: var(--bs-border-radius-sm);
+}
+.navbar-light .navbar-nav .nav-link:hover {
+  color: rgba(0, 0, 0, 0.9);
+  background-color: rgba(var(--bs-primary-rgb), 0.05); /* Subtle hover background */
+}
+.navbar-light .navbar-nav .nav-link.active {
+  color: var(--bs-primary-darker);
+  font-weight: 600; /* Bolder active link */
+  background-color: rgba(var(--bs-primary-rgb), 0.1); /* Slightly stronger active background */
+  border-bottom: none; /* Remove bottom border */
+  padding: 0.7rem 0.5rem; /* Ensure padding is consistent */
+}
+.navbar-light .nav-item .nav-link.btn-link { /* Logout button */
+    color: rgba(0, 0, 0, 0.7);
+    background-color: transparent;
+    margin: 0; /* Reset margin if needed */
+}
+.navbar-light .nav-item .nav-link.btn-link:hover {
+    color: rgba(0, 0, 0, 0.9);
+    background-color: rgba(220, 53, 69, 0.05); /* Subtle red hint on logout hover */
+}
+/* --- Navbar Logo Styling --- */
+.navbar-brand img {
+  max-height: 100px; /* Adjust this value as needed (e.g., 30px, 40px) */
+  width: auto; /* Maintain aspect ratio */
+  /* vertical-align: middle; Optional: Adjust vertical alignment if needed */
+}
+/* --- END Navbar Logo Styling --- */
+
+/* Buttons */
+.btn {
+  font-weight: 500;
+  border-radius: var(--bs-border-radius);
+  padding: 0.5rem 1.1rem;
+  transition: all 0.2s ease-in-out;
+  text-transform: none; /* Use normal case */
+  letter-spacing: 0.2px;
+  box-shadow: none; /* Remove default shadow for cleaner look */
+  border: 1px solid transparent;
+}
+.btn:hover{
+    transform: translateY(-1px); /* Less dramatic lift */
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.07);
+}
+.btn-primary {
+  background-color: var(--bs-primary);
+  border-color: var(--bs-primary);
+  color: #fff;
+}
+.btn-primary:hover, .btn-primary:focus {
+  background-color: var(--bs-primary-darker);
+  border-color: var(--bs-primary-darker);
+  color: #fff;
+}
+.btn-primary:active, .btn-primary.active {
+   background-color: var(--bs-primary-darker) !important;
+   border-color: var(--bs-primary-darker) !important;
+   box-shadow: inset 0 1px 2px rgba(0,0,0,0.1); /* Inner shadow on press */
+}
+.btn-danger {
+    /* Add styling if needed */
+}
+.btn-sm {
+    padding: 0.3rem 0.8rem;
+    font-size: 0.85rem;
+}
+
+/* --- NEW Custom Table Styling (Applies to ALL tables) --- */
+.table {
+    border-collapse: separate; /* Needed for border-radius on cells/rows */
+    border-spacing: 0;
+    width: 100%;
+    margin-bottom: 1.5rem;
+    background-color: var(--bg-white);
+    border: 1px solid var(--table-border-color);
+    border-radius: var(--bs-border-radius-lg); /* Rounded corners for the whole table */
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+    overflow: hidden; /* Clip content to rounded corners */
+}
+
+/* Table Header */
+.table thead th {
+    background-color: var(--bg-light-shade); /* Light grey header */
+    padding: 0.9rem 1rem;
+    font-weight: 600;
+    color: var(--text-dark-shade);
+    text-transform: none; /* Normal case headers */
+    font-size: 0.9em;
+    letter-spacing: 0.3px;
+    border-bottom: 1px solid var(--table-border-color);
+    vertical-align: bottom; /* Align text to bottom */
+    text-align: left; /* Default left align */
+}
+/* First/Last header cells match table radius */
+.table thead tr:first-child th:first-child { border-top-left-radius: var(--bs-border-radius-lg); }
+.table thead tr:first-child th:last-child { border-top-right-radius: var(--bs-border-radius-lg); }
+
+/* Table Body Cells */
+.table tbody td {
+    padding: 0.85rem 1rem;
+    vertical-align: middle; /* Center content vertically */
+    border-top: 1px solid var(--table-border-color); /* Horizontal lines */
+    color: #495057; /* Slightly muted body text */
+    font-size: 0.95rem;
+}
+
+/* Row Hover State */
+.table tbody tr:hover {
+    background-color: rgba(var(--bs-primary-rgb), 0.05); /* Use primary color tint on hover */
+    /* color: var(--text-dark-shade); */ /* Optional: Darken text on hover */
+}
+
+/* Striped Tables */
+.table-striped > tbody > tr:nth-of-type(odd) > * {
+    --bs-table-accent-bg: rgba(0, 0, 0, 0.015); /* Very subtle grey stripe */
+    color: var(--bs-table-striped-color);
+}
+.table-striped > tbody > tr:hover > * {
+     --bs-table-accent-bg: rgba(var(--bs-primary-rgb), 0.07); /* Make hover slightly stronger on striped */
+}
+
+/* Remove top border for the first row in tbody */
+.table tbody tr:first-child td {
+    border-top: none;
+}
+
+/* Ensure links within tables look okay */
+.table tbody td a {
+    /* font-weight: 500; */ /* Optional: slightly bolder links */
+    /* color: var(--bs-link-color); */ /* Handled by global link color */
+}
+
+/* Bordered table variant (if you still use .table-bordered) */
+.table-bordered {
+     border: 1px solid var(--table-border-color);
+}
+.table-bordered th,
+.table-bordered td {
+    border: 1px solid var(--table-border-color);
+}
+.table-bordered thead th,
+.table-bordered thead td {
+    border-bottom-width: 2px; /* Keep Bootstrap's thicker header bottom border */
+}
+/* --- END Custom Table Styling --- */
+
+
+/* Footer */
+footer {
+    background-color: var(--bg-white); /* White footer */
+    color: var(--text-muted-shade);
+    border-top: 1px solid var(--table-border-color); /* Match lighter border */
+}
+
+/* Form Inputs */
+.form-control, .form-select {
+    border-color: #ced4da;
+    border-radius: var(--bs-border-radius);
+    padding: 0.45rem 0.8rem;
+    transition: border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+}
+.form-control:focus, .form-select:focus {
+    border-color: var(--bs-primary-lighter);
+    box-shadow: 0 0 0 0.2rem rgba(var(--bs-primary-rgb), 0.2); /* Softer focus ring */
+}
+
+/* --- 4. Responsive Table Styling (Adapting to NEW base table style) --- */
+@media (max-width: 767.98px) {
+
+  /* Hide the custom styled header */
+  .table-responsive > .table.table-responsive-stack > thead {
+    display: none;
+  }
+
+  /* Override base table styles for stacked view */
+  .table-responsive > .table.table-responsive-stack {
+     border-radius: 0; /* Remove overall table radius */
+     border: none; /* Remove overall table border */
+     box-shadow: none; /* Remove overall table shadow */
+     background-color: transparent; /* Make table wrapper transparent */
+     border-collapse: collapse; /* Reset collapse */
+     border-spacing: 0;
+  }
+
+  .table-responsive > .table.table-responsive-stack > tbody > tr {
+    /* This is now the 'card' */
+    display: block;
+    margin-bottom: 1.25rem; /* Space between cards */
+    border: 1px solid var(--table-border-color); /* Card border */
+    border-radius: var(--bs-border-radius-lg); /* Card radius */
+    padding: 0;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.06);
+    background-color: var(--bg-white); /* Card background */
+    overflow: hidden; /* Clip cell content to card radius */
+  }
+  .table-responsive > .table.table-responsive-stack > tbody > tr:hover {
+      background-color: var(--bg-white); /* Disable row hover effect in stacked view */
+  }
+
+  .table-responsive > .table.table-responsive-stack > tbody > tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .table-responsive > .table.table-responsive-stack > tbody > tr > td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.8rem 1rem; /* Adjust padding */
+    border: none; /* Remove cell borders */
+    border-bottom: 1px solid var(--table-border-color); /* Keep line between fields */
+    text-align: right;
+    font-size: 0.9rem; /* Adjust font size */
+  }
+  /* Remove border-top override from base style */
+   .table-responsive > .table.table-responsive-stack > tbody > tr:first-child td {
+      border-top: none;
+   }
+   /* Remove bottom border from last cell in card */
+  .table-responsive > .table.table-responsive-stack > tbody > tr > td:last-child {
+    border-bottom: none;
+  }
+
+  .table-responsive > .table.table-responsive-stack > tbody > tr > td::before {
+    content: attr(data-label);
+    font-weight: 500;
+    color: var(--text-muted-shade);
+    text-align: left;
+    padding-right: 1rem;
+    font-size: 0.8rem; /* Smaller labels */
+    white-space: nowrap;
+  }
+
+  /* Stats and Actions columns */
+  .table-responsive > .table.table-responsive-stack > tbody > tr > td[data-label="Stats"],
+  .table-responsive > .table.table-responsive-stack > tbody > tr > td[data-label="Actions"] {
+    display: block;
+    text-align: center;
+    padding: 0.9rem 1rem;
+    /* Use subtle background */
+    background-color: rgba(var(--bs-primary-rgb), 0.03);
+  }
+
+  .table-responsive > .table.table-responsive-stack > tbody > tr > td[data-label="Stats"]::before,
+  .table-responsive > .table.table-responsive-stack > tbody > tr > td[data-label="Actions"]::before {
+    display: block;
+    margin-bottom: 0.6rem;
+    text-align: center;
+    font-weight: 600;
+    color: var(--text-dark-shade);
+    font-size: 0.85rem;
+  }
+
+   /* Buttons within stacked table */
+  .table-responsive > .table.table-responsive-stack > tbody > tr > td[data-label="Stats"] a,
+  .table-responsive > .table.table-responsive-stack > tbody > tr > td[data-label="Actions"] button,
+  .table-responsive > .table.table-responsive-stack > tbody > tr > td[data-label="Actions"] form {
+      display: inline-block;
+      width: auto;
+      min-width: 90px;
+      margin: 0.15rem 0.25rem;
+      font-weight: 500;
+      text-transform: none;
+  }
+  .table-responsive > .table.table-responsive-stack > tbody > tr > td[data-label="Actions"] form {
+      display: inline-block;
+  }
+
+  /* Empty message */
+   .table-responsive > .table.table-responsive-stack > tbody > tr > td[colspan] {
+      display: block;
+      text-align: center;
+      padding: 1.5rem;
+      border: none;
+      font-style: italic;
+      color: var(--text-muted-shade);
+      background-color: transparent; /* Ensure no card background */
+   }
+    .table-responsive > .table.table-responsive-stack > tbody > tr > td[colspan]::before {
+        content: none;
+    }
+
+} /* End of @media query */

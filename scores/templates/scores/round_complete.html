@@ -32,8 +32,10 @@
   <hr>
 
   {# --- Action Buttons --- #}
+  {# This div contains the buttons/links that will appear inline #}
   <div class="my-3">
-    {# Check if there are more rounds (optional: based on a game.total_rounds field) #}
+    {# Button 1 (inside form) #}
+    {# Optional check for game completion could go here #}
     {# {% if completed_round < game.total_rounds %} #}
       <form method="post" action="{% url 'round_complete' game.id %}" style="display: inline-block;">
           {% csrf_token %}
@@ -41,13 +43,16 @@
       </form>
     {# {% endif %} #}
 
+    {# Button 2 (inside form) #}
     <form method="post" action="{% url 'round_complete' game.id %}" style="display: inline-block;">
         {% csrf_token %}
         <button type="submit" name="end_game" class="btn btn-warning ms-2">End Game & View Stats</button>
     </form>
 
+    {# Button 3 (link styled as button) #}
     <a href="{% url 'game_detail' game.id %}" class="btn btn-secondary ms-2">Game Overview</a>
-    {# Add a link back to live_game only if debugging, usually not needed here #}
+
+    {# Optional Debug Link - commented out #}
     {# <a href="{% url 'live_game' game.id %}" class="btn btn-outline-secondary ms-2">Back to Live (Debug)</a> #}
   </div>
 

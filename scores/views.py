@@ -7,6 +7,7 @@ from django.http import JsonResponse
 from django.urls import reverse
 from django.db.models.functions import Coalesce
 from django.views.decorators.http import require_POST
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 
 # --- CORRECTED IMPORT ---
 from .models import Game, Player, GamePlayer, Score, Opponent, Location, GameType # Added GameType
@@ -389,48 +390,66 @@ def game_statistics(request, game_id):
     }
     return render(request, "scores/game_stats.html", context)
 
+GAMES_PER_PAGE = 5
 # --- Past Games View (Minor adjustment for clarity) ---
+from django.template.loader import render_to_string  # Add this import at the top of your file
+
 def past_games(request):
-    games = Game.objects.all().order_by("-date", "-id") # Add secondary sort for consistency
+    game_list = Game.objects.all().order_by("-date", "-id")
+    paginator = Paginator(game_list, GAMES_PER_PAGE)
+    page_number = request.GET.get("page", 1)
+
+    try:
+        page_obj = paginator.page(page_number)
+    except PageNotAnInteger:
+        page_obj = paginator.page(1)
+    except EmptyPage:
+        page_obj = paginator.page(paginator.num_pages)
+
     past_games_data = []
-    for game in games:
-        # Use the more robust method from game_statistics for totals
-        own_ids = list(GamePlayer.objects.filter(game=game, team="own").values_list("player_id", flat=True).distinct())
-        opp_ids = list(GamePlayer.objects.filter(game=game, team="opp").values_list("player_id", flat=True).distinct())
+    game_ids_on_page = [game.id for game in page_obj.object_list]
+    scores_agg = Score.objects.filter(game_id__in=game_ids_on_page).values('game_id').annotate(
+        own_total=Coalesce(Sum('total', filter=Q(player__gameplayer__team='own')), 0),
+        opp_total=Coalesce(Sum('total', filter=Q(player__gameplayer__team='opp')), 0)
+    ).values('game_id', 'own_total', 'opp_total')
+    scores_dict = {item['game_id']: item for item in scores_agg}
 
-        own_total = Score.objects.filter(game=game, player__in=own_ids)\
-            .aggregate(total=Coalesce(Sum("total"), 0))["total"]
-        opp_total = Score.objects.filter(game=game, player__in=opp_ids)\
-            .aggregate(total=Coalesce(Sum("total"), 0))["total"]
+    for game in page_obj.object_list:
+        game_scores = scores_dict.get(game.id, {'own_total': 0, 'opp_total': 0})
+        own_total = game_scores['own_total']
+        opp_total = game_scores['opp_total']
+        result = "Win" if own_total > opp_total else "Loss" if own_total < opp_total else "Draw"
+        past_games_data.append({"game": game, "result": result, "own_total": own_total, "opp_total": opp_total})
 
-        if own_total > opp_total:
-            result = "Win"
-        elif own_total < opp_total:
-            result = "Loss"
-        else:
-            result = "Draw"
-        past_games_data.append({
-            "game": game,
-            "result": result,
-            "own_total": own_total,
-            "opp_total": opp_total,
-        })
-    return render(request, "scores/past_games.html", {"past_games": past_games_data})
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        try:
+            html = render_to_string('scores/_past_games_table_rows.html', {'past_games': past_games_data, 'user': request.user})
+            pagination_html = render_to_string('scores/_pagination_controls.html', {'page_obj': page_obj})
+            return JsonResponse({
+                'html': html,
+                'pagination_html': pagination_html,
+                'current_page': page_obj.number
+            })
+        except Exception as e:
+            print(f"Error rendering AJAX response: {e}")
+            return JsonResponse({'error': str(e)}, status=500)
 
-# --- Delete Game View (Unchanged) ---
+    context = {"past_games": past_games_data, "page_obj": page_obj}
+    return render(request, "scores/past_games.html", context)
+    
+@require_POST
 @staff_member_required
 def delete_game(request, game_id):
-    game = get_object_or_404(Game, id=game_id)
-    if request.method == "POST":
-        game_name = game.name # Get name before deleting for message/log if needed
+    try:
+        game = get_object_or_404(Game, pk=game_id)
         game.delete()
-        print(f"Deleted game: {game_name} (ID: {game_id})")
-        # Add a success message?
-        # from django.contrib import messages
-        # messages.success(request, f"Game '{game_name}' deleted successfully.")
-        return redirect("past_games")  # Redirect after deletion
-    return render(request, "scores/confirm_delete_game.html", {"game": game})
-
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+            return JsonResponse({'status': 'success', 'message': 'Game deleted successfully'})
+        return redirect(reverse('past_games'))
+    except Exception as e:
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+        return redirect(reverse('past_games'))
 # Make sure you have a game_detail view referenced in round_complete.html if needed
 # Example:
 def game_detail(request, game_id):
@@ -495,12 +514,6 @@ def player_statistics(request):
     }
     return render(request, 'scores/player_statistics.html', context)
 # --- End Player Statistics View ---
-
-
-
-
-
-
 
 @require_POST # Ensures this view only accepts POST requests
 @staff_member_required # Or login_required, depending on your auth needs

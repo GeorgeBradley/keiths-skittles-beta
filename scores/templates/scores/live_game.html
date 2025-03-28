@@ -8,7 +8,17 @@
 
   {# --- Message Display Area (Info/Success/Error) --- #}
   <div id="message-display" class="alert {% if error %}alert-danger{% elif round_complete %}alert-success{% else %}alert-info{% endif %}" role="alert">
-    <h4 id="message-text">{{ message|default:"Loading game state..." }}</h4>
+     {# --- Adjusted Message Text Logic --- #}
+     <h4 id="message-text">
+      {% if round_complete %}
+        Round {{ current_round }} Complete!
+      {% elif message %}
+        {{ message }}
+      {% else %}
+        Enter score... {# Default message during play #}
+      {% endif %}
+     </h4>
+     {# --- End Adjusted Message Text --- #}
     {% if error %}<p>Error: {{ error }}</p>{% endif %}
   </div>
 
@@ -26,7 +36,7 @@
 
   {# --- Score Entry Form Wrapper --- #}
   <div id="score-form-wrapper" {% if round_complete or error %} style="display: none;" {% endif %}>
-    <form method="post" id="score-form" action="{% url 'live_game' game.id %}" novalidate>
+    <form method="post" id="score-form" action="{% url 'live_game' game.id %}" novalidate> {# Action remains 'live_game' for AJAX score submit #}
       {% csrf_token %}{{ score_form.as_p }}
       <button type="submit" name="enter_score" id="submit-score-btn" class="btn btn-success">Submit Score</button>
     </form>
@@ -35,13 +45,29 @@
   {# --- Round Completion Display Wrapper --- #}
   {# This whole div is hidden/shown based on round_complete status #}
   <div id="round-complete-wrapper" {% if not round_complete %} style="display: none;" {% endif %}>
-     <div class="alert alert-success">
-       <span id="round-complete-message">Round {{ current_round }} is complete.</span>
-       {# --- UPDATED LINK AND ERROR SPAN --- #}
-       <a id="round-complete-link" href="{{ round_complete_url|default:'#' }}" class="btn btn-primary ms-2" {% if not round_complete_url %} style="display: none;" {% endif %}>Proceed</a>
-       <span id="round-complete-error" class="ms-2" {% if round_complete_url %} style="display: none;" {% endif %}>Proceed (link error).</span>
-       {# ----------------------------------- #}
-       <a href="{% url 'game_statistics' game.id %}" class="btn btn-info ms-2">View Game Stats</a>
+     <div class="alert alert-success">  {# This is the light green box #}
+       <span id="round-complete-message" class="me-2">Round {{ current_round }} is complete.</span> {# Kept message, added margin #}
+
+       {# --- UPDATED ACTION BUTTONS --- #}
+
+       {# Button 1: Start Next Round - Action points to 'round_complete' URL #}
+       <form method="post" action="{% url 'round_complete' game.id %}" style="display: inline-block;"> {# <<<< ACTION URL CHANGED #}
+           {% csrf_token %}
+           {# Hidden input removed - round_complete view uses session #}
+           <button type="submit" name="next_round" class="btn btn-primary">Start Round {{ current_round|add:1 }}</button>
+       </form>
+
+       {# Button 2: End Game & View Stats - Action points to 'round_complete' URL #}
+       <form method="post" action="{% url 'round_complete' game.id %}" style="display: inline-block;" class="ms-2"> {# <<<< ACTION URL CHANGED #}
+           {% csrf_token %}
+           <button type="submit" name="end_game" class="btn btn-warning">End Game & View Stats</button>
+       </form>
+
+       {# Button 3: Game Overview Link (Stays the same) #}
+       <a href="{% url 'game_detail' game.id %}" class="btn btn-secondary ms-2">Game Overview</a>
+
+       {# --- END OF UPDATED ACTION BUTTONS --- #}
+
      </div>
   </div>
 
@@ -63,7 +89,7 @@
   </div>
 </div>
 
-{# ========================== JavaScript ========================== #}
+{# ========================== JavaScript (Unchanged from your last version) ========================== #}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // --- Get References (including error span) ---
@@ -80,8 +106,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const scoreFormWrapper = document.getElementById('score-form-wrapper');
     const roundCompleteWrapper = document.getElementById('round-complete-wrapper');
     const roundCompleteMessageEl = document.getElementById('round-complete-message');
+    // NOTE: roundCompleteLink and roundCompleteError refs are kept below,
+    // even though the elements are removed from HTML. The JS code has
+    // checks (e.g., `if (roundCompleteLink && roundCompleteError ...)`),
+    // so leaving the refs won't break it, but the conditions involving them
+    // will now evaluate to false as the elements won't be found.
     const roundCompleteLink = document.getElementById('round-complete-link');
-    const roundCompleteError = document.getElementById('round-complete-error'); // <<<<< Get error span ref
+    const roundCompleteError = document.getElementById('round-complete-error');
 
     const initialPlusMinus = {{ plus_minus|default_if_none:"null" }};
 
@@ -97,7 +128,7 @@ document.addEventListener('DOMContentLoaded', function() {
       scoreForm.addEventListener('submit', function(event) {
         event.preventDefault();
         // UI Feedback Start
-        if (submitButton) submitButton.disabled = true; if (messageTextEl) messageTextEl.textContent = "Submitting score..."; if (messageDisplayEl) messageDisplayEl.className = 'alert alert-info'; if (formErrorsEl) formErrorsEl.style.display = 'none';
+        if (submitButton) submitButton.disabled = true; if (messageTextEl && messageDisplayEl.classList.contains('alert-info')) messageTextEl.textContent = "Submitting score..."; /* Don't overwrite success/error messages */ if (messageDisplayEl && messageDisplayEl.classList.contains('alert-info')) messageDisplayEl.className = 'alert alert-info'; if (formErrorsEl) formErrorsEl.style.display = 'none';
 
         const formData = new FormData(scoreForm); const csrfToken = formData.get('csrfmiddlewaretoken');
 
@@ -106,50 +137,71 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(data => {
           // Handle success OR the specific "already complete" error case
           if (data.success || (data.success === false && data.round_complete === true && data.error === "Round already complete.")) {
-            if (messageTextEl && data.message) messageTextEl.textContent = data.message;
+            // Update message ONLY if it's not already a round complete message
+            if (messageTextEl && data.message && !(data.round_complete && messageDisplayEl.classList.contains('alert-success'))) {
+                messageTextEl.textContent = data.message;
+            }
             if (data.plus_minus !== undefined) updatePlusMinusDisplay(data.plus_minus);
             if (data.success && data.new_score) { renderScoreRow(data.new_score); scoreForm.reset(); }
 
             // --- Check for Round Completion ---
             if (data.round_complete) {
-                const finalMessage = data.message || `Round completed.`;
-                if (messageTextEl) messageTextEl.textContent = finalMessage;
-                if (messageDisplayEl) messageDisplayEl.className = 'alert alert-success';
-                if (scoreFormWrapper) scoreFormWrapper.style.display = 'none';
+                const finalMessage = `Round ${data.current_round || '{{ current_round }}'} Complete!`; // Construct final message
+                if (messageTextEl) messageTextEl.textContent = finalMessage; // Update main message area
+                if (messageDisplayEl) messageDisplayEl.className = 'alert alert-success'; // Ensure main area is success style
+                if (scoreFormWrapper) scoreFormWrapper.style.display = 'none'; // Hide score form
 
                 if (roundCompleteWrapper) {
-                    if (roundCompleteMessageEl) roundCompleteMessageEl.textContent = finalMessage;
+                    // Update the specific message span inside the round complete wrapper if needed
+                    if (roundCompleteMessageEl) roundCompleteMessageEl.textContent = `Round ${data.current_round || '{{ current_round }}'} is complete.`;
 
-                    // --- Explicitly Show/Hide Link vs Error ---
-                    // Check if data.round_complete_url is truthy
+                    // --- JS related to the OLD link/error span will now safely do nothing ---
+                    // The code below checks for `roundCompleteLink` and `roundCompleteError`.
+                    // Since these elements no longer exist in the HTML, the `if` conditions
+                    // will be false, and this block will have no effect.
                     if (roundCompleteLink && roundCompleteError && data.round_complete_url) {
-                        roundCompleteLink.href = data.round_complete_url;
-                        roundCompleteLink.style.display = ''; // <<<<< SHOW Link
-                        roundCompleteError.style.display = 'none'; // <<<<< HIDE Error Span
-                        console.log("JS: Round complete, URL found, showing link:", data.round_complete_url);
+                        // This code will not run as roundCompleteLink is null
+                        // roundCompleteLink.href = data.round_complete_url;
+                        // roundCompleteLink.style.display = '';
+                        // roundCompleteError.style.display = 'none';
+                        console.log("JS: (Old logic) Round complete, URL found:", data.round_complete_url);
                     } else if (roundCompleteLink && roundCompleteError) { // URL is null/missing
-                        console.error("JS: Round complete, but URL missing/null in response:", data);
-                        roundCompleteLink.style.display = 'none'; // <<<<< HIDE Link
-                        roundCompleteError.style.display = ''; // <<<<< SHOW Error Span
+                        // This code will not run as roundCompleteLink is null
+                        console.error("JS: (Old logic) Round complete, but URL missing/null:", data);
+                        // roundCompleteLink.style.display = 'none';
+                        // roundCompleteError.style.display = '';
                     }
-                    // --- End Explicit Show/Hide ---
+                    // --- End of safely ignored old logic ---
 
-                    roundCompleteWrapper.style.display = ''; // Show the wrapper
+                    roundCompleteWrapper.style.display = ''; // Show the wrapper containing the NEW buttons
                 }
             } else if (data.success) { // Round NOT complete, score WAS successful
                  if (submitButton) submitButton.disabled = false;
                  const firstInput = scoreForm.querySelector('input[type="number"], input[type="text"]');
                  if(firstInput) { try { firstInput.focus(); } catch (e) { /* ignore */ } }
-            } else { // !data.success and not round_complete (e.g. validation error)
+            } else { // !data.success and not round_complete (e.g. validation error from backend)
+                 // We might receive validation errors even if success is false
                  if (submitButton) submitButton.disabled = false;
             }
 
-          } else { // Handle other !data.success cases (validation errors)
-            if (data.errors && formErrorsEl) { /* Error display */ let errorHtml = '<strong>Errors:</strong><ul>'; for (const field in data.errors) { const fieldErrors = Array.isArray(data.errors[field]) ? data.errors[field] : [data.errors[field]]; fieldErrors.forEach(error => { errorHtml += `<li>${field === '__all__' ? '' : field + ': '}${error.message || error}</li>`; }); } errorHtml += '</ul>'; formErrorsEl.innerHTML = errorHtml; formErrorsEl.style.display = 'block'; if (messageTextEl) messageTextEl.textContent = "Submission failed."; if (messageDisplayEl) messageDisplayEl.className = 'alert alert-warning';
-            } else if (data.error && formErrorsEl) { /* Generic error */ formErrorsEl.innerHTML = `<strong>Error:</strong> ${data.error}`; formErrorsEl.style.display = 'block'; if (messageTextEl) messageTextEl.textContent = "Submission failed."; if (messageDisplayEl) messageDisplayEl.className = 'alert alert-danger';
-            } else { throw new Error('Unknown submission failure.'); }
-            if (submitButton) submitButton.disabled = false;
           }
+          // Handle validation errors specifically if not success and not round complete override
+          if (!data.success && !(data.success === false && data.round_complete === true)) {
+             if (data.errors && formErrorsEl) { /* Error display */ let errorHtml = '<strong>Errors:</strong><ul>'; for (const field in data.errors) { const fieldErrors = Array.isArray(data.errors[field]) ? data.errors[field] : [data.errors[field]]; fieldErrors.forEach(error => { errorHtml += `<li>${field === '__all__' ? '' : field + ': '}${error.message || error}</li>`; }); } errorHtml += '</ul>'; formErrorsEl.innerHTML = errorHtml; formErrorsEl.style.display = 'block'; if (messageTextEl) messageTextEl.textContent = "Submission failed."; if (messageDisplayEl) messageDisplayEl.className = 'alert alert-warning';
+             } else if (data.error && formErrorsEl) { /* Generic error */ formErrorsEl.innerHTML = `<strong>Error:</strong> ${data.error}`; formErrorsEl.style.display = 'block'; if (messageTextEl) messageTextEl.textContent = "Submission failed."; if (messageDisplayEl) messageDisplayEl.className = 'alert alert-danger';
+             } else if (!data.round_complete) { // Avoid throwing error if it was just a round_complete notification
+                 console.warn("Submission failed with no specific errors provided:", data);
+                 // Optionally show a generic message if needed, but avoid if formErrorsEl was populated
+                 if (formErrorsEl.style.display === 'none') {
+                    formErrorsEl.innerHTML = '<strong>Error:</strong> Submission failed for an unknown reason.';
+                    formErrorsEl.style.display = 'block';
+                    if (messageTextEl) messageTextEl.textContent = "Submission failed.";
+                    if (messageDisplayEl) messageDisplayEl.className = 'alert alert-danger';
+                 }
+             }
+             if (submitButton) submitButton.disabled = false;
+          }
+
         })
         .catch(error => { /* Network/Fetch error handling */
           console.error('AJAX Error:', error); let errorMsg = 'Unexpected error.'; if (error && error.data && error.data.error) { errorMsg = `Error: ${error.data.error}`; } else if (error && error.status) { errorMsg = `Server error: ${error.status}.`; } else if (error instanceof Error && error.message) { errorMsg = error.message; } if (messageTextEl) messageTextEl.textContent = "Error."; if (messageDisplayEl) messageDisplayEl.className = 'alert alert-danger'; if (formErrorsEl) { formErrorsEl.innerHTML = `<strong>Error:</strong> ${errorMsg}`; formErrorsEl.style.display = 'block'; } if (submitButton) submitButton.disabled = false;
