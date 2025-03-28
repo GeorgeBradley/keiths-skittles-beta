@@ -30,4 +30,7 @@ urlpatterns = [
     # AJAX URLs (prefixing with ajax/ is good practice)
     path('ajax/add-opponent/', views.ajax_add_opponent, name='ajax_add_opponent'),
     path('ajax/add-location/', views.ajax_add_location, name='ajax_add_location'),
+    path('ajax/player/<int:player_id>/games/page/<int:page_num>/',
+         views.player_game_history_page,
+         name='ajax_player_game_history'),
 ]

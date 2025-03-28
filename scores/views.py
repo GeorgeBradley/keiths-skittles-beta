@@ -1,7 +1,7 @@
 
 import json
 from django.shortcuts import render, redirect, get_object_or_404
-from django.db.models import Sum, Max, Min, Count, F, FloatField, ExpressionWrapper, Case, When, Value, Q, Avg
+from django.db.models import Sum, Max, Min, Count, F, FloatField, ExpressionWrapper, Case, When, Value, Q, Avg, OuterRef, Exists
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import JsonResponse
 from django.urls import reverse
@@ -9,6 +9,7 @@ from django.db.models.functions import Coalesce
 from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from itertools import zip_longest
+
 
 # --- CORRECTED IMPORT ---
 from .models import Game, Player, GamePlayer, Score, Opponent, Location, GameType # Added GameType
@@ -543,13 +544,59 @@ def game_detail(request, game_id):
     )
     return render(request, "scores/game_detail.html", {"game": game})
 
+# --- Constants ---
+GAMES_PER_PAGE = 5 # Define how many games per page
+
+# --- Helper Function ---
+def _get_player_improvement_data(player_id):
+    """Helper function to get the raw improvement data query, ordered for the table."""
+    player_scores = Score.objects.filter(player_id=player_id)
+    return list(
+        player_scores.values(
+            'game__id', 'game__date',
+            'game__opponent__name', 'game__location__name'
+        )
+        .annotate(game_avg=Avg('total'))
+        .order_by('-game__date') # Order by most recent first for table display
+    )
+
+# --- Main Statistics View ---
 def player_statistics(request):
     players = Player.objects.exclude(name__startswith="Opp.").order_by("name")
     selected_player = None
     stats = {}
-    chart_data_json = None  # <<<<< Initialize chart_data_json to None here
+    chart_data_json = None
+    game_history_page = None
+    paginator = None
+    top_players_chart_json = None
 
     player_id = request.GET.get('player_id')
+
+    # --- Top 5 Own Team Players Chart --- 
+    # Get scores where players were specifically on the 'own' team
+    top_players_data = (
+        Score.objects
+        .filter(
+            # This exists clause ensures each score has a matching GamePlayer
+            # record with the same game_id and player_id and team='own'
+            Exists(
+                GamePlayer.objects.filter(
+                    game_id=OuterRef('game_id'),
+                    player_id=OuterRef('player_id'),
+                    team='own'
+                )
+            )
+        )
+        .values('player__id', 'player__name')
+        .annotate(total_score=Coalesce(Sum('total'), 0))
+        .order_by('-total_score')[:5]
+    )
+
+    top_players_chart_data = {
+        'labels': [p['player__name'] for p in top_players_data],
+        'data': [p['total_score'] for p in top_players_data],
+    }
+    top_players_chart_json = json.dumps(top_players_chart_data)
 
     if player_id:
         try:
@@ -558,7 +605,6 @@ def player_statistics(request):
             player_games = GamePlayer.objects.filter(player=selected_player)
 
             if player_scores.exists():
-                # --- Stats Calculations ---
                 total_score_agg = player_scores.aggregate(total_score=Coalesce(Sum('total'), 0))
                 stats['total_score'] = total_score_agg['total_score']
                 stats['total_cycles'] = player_scores.count()
@@ -607,89 +653,143 @@ def player_statistics(request):
                     roll_max.get('max_r3') or 0
                 )
 
-                # --- Improvement Trend & Chart Data ---
-                improvement_data_qs = list(
-                    player_scores.values(
-                        'game__id', 'game__date',
-                        'game__opponent__name', 'game__location__name'
-                    )
-                    .annotate(game_avg=Avg('total'))
-                    .order_by('game__date')
-                )
-                stats['improvement_trend'] = improvement_data_qs
+                improvement_data_qs = _get_player_improvement_data(selected_player.id)
 
                 if improvement_data_qs:
+                    chart_data_list = sorted(
+                        improvement_data_qs,
+                        key=lambda x: x['game__date'] if x.get('game__date') else date.min
+                    )
+
                     chart_data = {
-                        'labels': [item['game__date'].strftime('%Y-%m-%d') for item in improvement_data_qs],
-                        'data': [float(item['game_avg']) for item in improvement_data_qs]
+                        'labels': [item['game__date'].strftime('%Y-%m-%d') for item in chart_data_list if item.get('game__date')],
+                        'data': [float(item['game_avg']) for item in chart_data_list if item.get('game_avg') is not None]
                     }
                     chart_data_json = json.dumps(chart_data)
 
-            # --- Game Participation & W/L/D (Optimized) ---
+                if improvement_data_qs:
+                    paginator = Paginator(improvement_data_qs, GAMES_PER_PAGE)
+                    try:
+                        game_history_page = paginator.page(1)
+                    except (EmptyPage, PageNotAnInteger):
+                        game_history_page = paginator.page(1) if paginator.num_pages >= 1 else paginator.page(paginator.num_pages)
+
             distinct_game_ids = list(player_games.values_list('game_id', flat=True).distinct())
             stats['games_participated'] = len(distinct_game_ids)
             stats['wins'] = 0
             stats['losses'] = 0
             stats['draws'] = 0
 
-            # Fetch all relevant game data in bulk
-            all_games_data = {
-                g.id: g for g in Game.objects.filter(id__in=distinct_game_ids)
-            }
+            if distinct_game_ids:
+                all_games_data = {
+                    g.id: g for g in Game.objects.filter(id__in=distinct_game_ids)
+                }
+                all_gameplayers = GamePlayer.objects.filter(game_id__in=distinct_game_ids)
+                game_team_map = {'own': {}, 'opp': {}}
+                for gp in all_gameplayers:
+                    game_team_map.setdefault(gp.team, {}).setdefault(gp.game_id, set()).add(gp.player_id)
 
-            # Get all GamePlayers for these games
-            all_gameplayers = GamePlayer.objects.filter(game_id__in=distinct_game_ids)
-            game_team_map = {'own': {}, 'opp': {}}
-            for gp in all_gameplayers:
-                game_team_map.setdefault(gp.team, {}).setdefault(gp.game_id, set()).add(gp.player_id)
+                score_totals = Score.objects.filter(game_id__in=distinct_game_ids) \
+                    .values('game_id', 'player_id') \
+                    .annotate(total=Coalesce(Sum('total'), 0))
 
-            # Get all total scores per game+player in one query
-            score_totals = Score.objects.filter(game_id__in=distinct_game_ids) \
-                .values('game_id', 'player_id') \
-                .annotate(total=Coalesce(Sum('total'), 0))
+                game_team_totals = {gid: {'own': 0, 'opp': 0} for gid in distinct_game_ids}
+                for s in score_totals:
+                    gid = s['game_id']
+                    pid = s['player_id']
+                    total = s['total']
+                    if pid in game_team_map.get('own', {}).get(gid, set()):
+                        game_team_totals[gid]['own'] += total
+                    elif pid in game_team_map.get('opp', {}).get(gid, set()):
+                        game_team_totals[gid]['opp'] += total
 
-            # Organize scores by game and team
-            game_team_totals = {gid: {'own': 0, 'opp': 0} for gid in distinct_game_ids}
-            for s in score_totals:
-                gid = s['game_id']
-                pid = s['player_id']
-                total = s['total']
-                if pid in game_team_map.get('own', {}).get(gid, set()):
-                    game_team_totals[gid]['own'] += total
-                elif pid in game_team_map.get('opp', {}).get(gid, set()):
-                    game_team_totals[gid]['opp'] += total
+                for g_id in distinct_game_ids:
+                    game_obj = all_games_data.get(g_id)
+                    if not game_obj:
+                        continue
 
-            # Now determine W/L/D based on team scores
-            for g_id in distinct_game_ids:
-                game_obj = all_games_data.get(g_id)
-                if not game_obj:
-                    continue
+                    is_own_team_player = selected_player.id in game_team_map.get('own', {}).get(g_id, set())
 
-                own_total = game_team_totals[g_id]['own']
-                opp_total = game_team_totals[g_id]['opp']
-                is_own_team_player = player_games.filter(game_id=g_id, team='own').exists()
-
-                if is_own_team_player:
-                    if own_total > opp_total:
-                        stats['wins'] += 1
-                    elif own_total < opp_total:
-                        stats['losses'] += 1
-                    else:
-                        stats['draws'] += 1
+                    if is_own_team_player:
+                        own_total = game_team_totals[g_id]['own']
+                        opp_total = game_team_totals[g_id]['opp']
+                        if own_total > opp_total:
+                            stats['wins'] += 1
+                        elif own_total < opp_total:
+                            stats['losses'] += 1
+                        else:
+                            stats['draws'] += 1
 
         except Player.DoesNotExist:
             selected_player = None
         except Exception as e:
             print(f"Error calculating stats for player {player_id}: {e}")
+            pass
 
     context = {
         'players': players,
         'selected_player': selected_player,
         'stats': stats,
-        'chart_data_json': chart_data_json
+        'chart_data_json': chart_data_json,
+        'game_history_page': game_history_page,
+        'paginator': paginator,
+        'player_id': player_id,
+        'top_players_chart_json': top_players_chart_json,
     }
     return render(request, 'scores/player_statistics.html', context)
+# --- AJAX View for Game History Pagination ---
+def player_game_history_page(request, player_id, page_num):
+    """
+    Returns JSON data for a specific page of a player's game history.
+    """
+    # Basic security/validation
+    if not request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        return JsonResponse({'error': 'Invalid request type'}, status=400)
 
+    try:
+        # Ensure player exists (or return 404 handled by get_object_or_404)
+        player = get_object_or_404(Player, id=player_id)
+
+        # Get the same base data as in the main view
+        improvement_data_qs = _get_player_improvement_data(player.id)
+        paginator = Paginator(improvement_data_qs, GAMES_PER_PAGE)
+
+        page_obj = paginator.get_page(page_num) # Handles invalid page numbers gracefully
+
+        # Prepare data for JSON serialization
+        game_data = []
+        for game_stat in page_obj.object_list:
+            # Convert date to string, handle None values gracefully
+            game_date_str = game_stat['game__date'].strftime('%Y-%m-%d') if game_stat.get('game__date') else 'N/A'
+            # Generate the detail URL safely
+            try:
+                 game_url = request.build_absolute_uri(reverse('game_statistics', args=[game_stat['game__id']]))
+            except Exception: # Handle cases where reverse fails (e.g., URL pattern not found)
+                 game_url = '#' # Fallback URL
+
+            game_data.append({
+                'game_id': game_stat['game__id'],
+                'date': game_date_str,
+                'opponent_name': game_stat.get('game__opponent__name') or 'N/A',
+                'location_name': game_stat.get('game__location__name') or 'N/A',
+                'game_avg': float(game_stat['game_avg']) if game_stat.get('game_avg') is not None else 0.0, # Ensure float
+                'game_url': game_url
+            })
+
+        return JsonResponse({
+            'games': game_data,
+            'has_next': page_obj.has_next(),
+            'has_previous': page_obj.has_previous(),
+            'current_page': page_obj.number,
+            'total_pages': paginator.num_pages,
+        })
+
+    except Player.DoesNotExist: # Should be caught by get_object_or_404, but good practice
+        return JsonResponse({'error': 'Player not found'}, status=404)
+    except Exception as e:
+        # Log the error for debugging
+        print(f"Error fetching game history page (Player: {player_id}, Page: {page_num}): {e}")
+        return JsonResponse({'error': 'An internal server error occurred while fetching game data.'}, status=500)
 
 @require_POST # Ensures this view only accepts POST requests
 @staff_member_required # Or login_required, depending on your auth needs

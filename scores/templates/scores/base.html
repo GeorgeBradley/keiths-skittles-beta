@@ -27,7 +27,7 @@
           <a class="navbar-brand {% if request.resolver_match.url_name == 'start_game' %}active{% endif %}" href="{% url 'start_game' %}">
             {# Replace 'img/logo.png' with the correct path to YOUR logo #}
             <img src="{% static 'img/the-nutters-logo.webp' %}" alt="Keith's Skittles Logo" class="d-inline-block align-text-top">
-          
+
         </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
@@ -101,7 +101,18 @@
     <!-- Bootstrap 5.3 JS Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
 
+    <!-- ================== ADD CHART.JS LIBRARIES HERE ================== -->
+    <!-- Chart.js Core Library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- Luxon Date Library (for time scale) -->
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+    <!-- Chart.js Adapter for Luxon -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.1.0/dist/chartjs-adapter-luxon.min.js"></script>
+    <!-- ================================================================= -->
+
+
     {% block extra_js %}
+    {# Scripts from child templates (like player_statistics.html chart init) will be included here #}
     {% endblock %}
 
 </body>

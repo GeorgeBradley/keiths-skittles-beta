@@ -1,9 +1,21 @@
 {% extends "scores/base.html" %}
 {% load static %}
+{% load i18n %} {# Optional: Load i18n if you use translatable strings like 'Loading...' #}
 
 {% block content %}
 <div class="container my-5">
   <h1 class="mb-4">Player Statistics</h1>
+  {# --- Top 5 (Overall) Own Team Scorers Chart --- #}
+  <div class="card mb-4 shadow-sm">
+    <div class="card-header">
+      <h3 class="h5 mb-0">Top 5 (Overall) Own Team Scorers</h3>
+    </div>
+    <div class="card-body">
+      <div style="position: relative; width: 100%; height: auto; min-height: 300px;">
+        <canvas id="topPlayersChart"></canvas>
+      </div>
+    </div>
+  </div>
 
   {# --- Player Selection Dropdown (Unchanged) --- #}
   <form method="get" action="{% url 'player_statistics' %}" class="mb-4 row g-3 align-items-center">
@@ -26,9 +38,10 @@
     <hr>
     <h2 class="mb-3">Stats for: {{ selected_player.name }}</h2>
 
-    {% if stats %}
+    {% if stats %} {# Check if base stats exist #}
       <div class="row">
-        {# Overall Summary Card (Unchanged) #}
+        {# --- Stat Cards (Unchanged) --- #}
+        {# Overall Summary Card #}
         <div class="col-md-6 col-lg-4 mb-4">
             <div class="card h-100 shadow-sm">
                 <div class="card-header">Overall Summary</div>
@@ -40,39 +53,35 @@
                 </ul>
             </div>
         </div>
-        {# Averages Card (Unchanged) #}
+        {# Averages Card #}
         <div class="col-md-6 col-lg-4 mb-4">
              <div class="card h-100 shadow-sm"> <div class="card-header">Averages</div> <ul class="list-group list-group-flush"> <li class="list-group-item d-flex justify-content-between align-items-center"> Avg Score / Cycle: <span class="badge bg-info rounded-pill">{{ stats.avg_per_cycle|default:0|floatformat:2 }}</span> </li> <li class="list-group-item d-flex justify-content-between align-items-center"> Avg Score / Roll: <span class="badge bg-info rounded-pill">{{ stats.avg_per_roll|default:0|floatformat:2 }}</span> </li> </ul> </div>
         </div>
-        {# High Scores Card (Unchanged) #}
+        {# High Scores Card #}
         <div class="col-md-6 col-lg-4 mb-4">
              <div class="card h-100 shadow-sm"> <div class="card-header">High Scores</div> <ul class="list-group list-group-flush"> <li class="list-group-item d-flex justify-content-between align-items-center"> Highest Cycle Score: <span class="badge bg-warning text-dark rounded-pill">{{ stats.highest_cycle_score|default:"N/A" }}</span> </li> <li class="list-group-item d-flex justify-content-between align-items-center"> Highest Single Roll: <span class="badge bg-warning text-dark rounded-pill">{{ stats.highest_roll_score|default:"N/A" }}</span> </li> </ul> </div>
         </div>
-        {# No-Balls Card (Unchanged) #}
+        {# No-Balls Card #}
         <div class="col-md-6 col-lg-4 mb-4">
              <div class="card h-100 shadow-sm"> <div class="card-header">"No-Balls" (Zeros)</div> <ul class="list-group list-group-flush"> <li class="list-group-item d-flex justify-content-between align-items-center"> Total Zero-Score Cycles: <span class="badge bg-danger rounded-pill">{{ stats.zero_cycle_count|default:0 }}</span> </li> <li class="list-group-item d-flex justify-content-between align-items-center"> Total Zero-Score Rolls: <span class="badge bg-danger rounded-pill">{{ stats.total_zero_rolls|default:0 }}</span> </li> <li class="list-group-item d-flex justify-content-between align-items-center"> Zero Roll %: <span class="badge bg-danger rounded-pill">{{ stats.zero_roll_percentage|default:0|floatformat:1 }}%</span> </li> </ul> </div>
         </div>
-        {# Win/Loss Record Card (Unchanged) #}
+        {# Win/Loss Record Card #}
         <div class="col-md-6 col-lg-4 mb-4">
             <div class="card h-100 shadow-sm"> <div class="card-header">Record (When on 'Own' Team)</div> <ul class="list-group list-group-flush"> <li class="list-group-item d-flex justify-content-between align-items-center text-success"> Wins: <span class="badge bg-success rounded-pill">{{ stats.wins|default:0 }}</span> </li> <li class="list-group-item d-flex justify-content-between align-items-center text-danger"> Losses: <span class="badge bg-danger rounded-pill">{{ stats.losses|default:0 }}</span> </li> <li class="list-group-item d-flex justify-content-between align-items-center text-muted"> Draws: <span class="badge bg-secondary rounded-pill">{{ stats.draws|default:0 }}</span> </li> </ul> </div>
         </div>
-      </div> {# End Row #}
+        {# --- End Stat Cards --- #}
+      </div> {# End Row for Stat Cards #}
 
-      
       {# --- Performance Chart --- #}
       <div class="card mb-4 shadow-sm">
         <div class="card-header">
-            {# MOVED COMMENTS OUTSIDE H3 #}
-            {# Using h5 for slightly smaller heading on mobile #}
-            {# Stack title/subtitle on extra-small screens #}
-            <h3 class="mb-0 h5"> 
+            <h3 class="mb-0 h5">
                 Performance Over Time
                 <small class="text-muted d-block d-sm-inline">(Avg Cycle Score per Game)</small>
             </h3>
         </div>
         <div class="card-body">
             {% if chart_data_json %}
-              {# The container for the canvas. #}
               <div style="position: relative; width: 100%; height: auto; min-height: 250px;">
                  <canvas id="performanceChart"></canvas>
               </div>
@@ -82,135 +91,426 @@
         </div>
       </div>
       {# --- End Performance Chart --- #}
-      {# Improvement Trend Table (Optional - keep if you want table too) #}
-      {# Improvement Trend Table #}
-      <div class="card mb-4 shadow-sm">
-        <div class="card-header">Game History (Avg Cycle Score)</div>
-        <div class="card-body p-0">
-          {% if stats.improvement_trend %}
-          <div class="table-responsive">
-            <table class="table table-striped table-hover mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th>Game Date</th>
-                  <th>Game Details</th> {# Changed Header #}
-                  <th class="text-end">Average Score</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for game_stat in stats.improvement_trend %}
-                  <tr>
-                    <td>{{ game_stat.game__date|date:"Y-m-d" }}</td>
-                    {# --- MODIFY THIS CELL --- #}
-                    <td>
-                      <a href="{% url 'game_statistics' game_id=game_stat.game__id %}">
-                        vs {{ game_stat.game__opponent__name|default:"N/A" }}
-                        at {{ game_stat.game__location__name|default:"N/A" }}
-                      </a>
-                    </td>
-                    {# --- END MODIFICATION --- #}
-                    <td class="text-end">{{ game_stat.game_avg|floatformat:2 }}</td>
-                  </tr>
-                {% empty %}
-                  <tr><td colspan="3" class="text-center text-muted p-3">No game history.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-          {% else %}
-            <p class="text-center text-muted p-3">No game history available.</p>
-          {% endif %}
-        </div>
-      </div>
 
-    {% else %} {# No stats calculated (e.g., player has no scores) #}
+      {# --- Game History Table (with Pagination) --- #}
+      <div class="card mb-4 shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap"> {# Use flex-wrap for smaller screens #}
+            <span class="me-3 mb-2 mb-sm-0">Game History (Avg Cycle Score)</span> {# Add margin for spacing #}
+            {# --- Pagination Controls Container --- #}
+            {# Hide controls if no paginator or only 1 page #}
+            <div id="game-history-pagination-controls"
+                 class="{% if not paginator or paginator.num_pages <= 1 %}d-none{% endif %}"
+                 data-player-id="{{ selected_player.id }}"
+                 data-current-page="{{ game_history_page.number|default:1 }}"
+                 data-total-pages="{{ paginator.num_pages|default:1 }}">
+                 <small id="page-info" class="text-muted me-2 align-middle">
+                     Page {{ game_history_page.number|default:1 }} of {{ paginator.num_pages|default:1 }}
+                 </small>
+                <button id="prev-page-btn" type="button" class="btn btn-sm btn-outline-secondary"
+                        {% if not game_history_page or not game_history_page.has_previous %}disabled{% endif %}>
+                    « {% trans "Prev" %}
+                </button>
+                <button id="next-page-btn" type="button" class="btn btn-sm btn-outline-secondary"
+                        {% if not game_history_page or not game_history_page.has_next %}disabled{% endif %}>
+                    {% trans "Next" %} »
+                </button>
+            </div>
+        </div>
+        <div class="card-body p-0">
+           {# Loading Indicator - Initially Hidden #}
+           <div id="history-loading" class="text-center p-3" style="display: none;">
+               <div class="spinner-border spinner-border-sm text-primary" role="status">
+                   <span class="visually-hidden">{% trans "Loading..." %}</span>
+               </div>
+               <span class="ms-2 text-muted">{% trans "Loading game history..." %}</span>
+           </div>
+
+           {# Table container #}
+           <div id="game-history-table-container">
+               {% if game_history_page and game_history_page.object_list %}
+               <div class="table-responsive">
+                 <table class="table table-striped table-hover mb-0">
+                   <thead class="table-light">
+                     <tr>
+                       <th>Game Date</th>
+                       <th>Game Details</th>
+                       <th class="text-end">Average Score</th>
+                     </tr>
+                   </thead>
+                   {# This tbody will be updated by JS #}
+                   <tbody id="game-history-tbody">
+                     {% for game_stat in game_history_page.object_list %}
+                       <tr>
+                         <td>{{ game_stat.game__date|date:"Y-m-d"|default:"N/A" }}</td>
+                         <td>
+                           <a href="{% url 'game_statistics' game_id=game_stat.game__id %}">
+                             vs {{ game_stat.game__opponent__name|default:"N/A" }}
+                             at {{ game_stat.game__location__name|default:"N/A" }}
+                           </a>
+                         </td>
+                         <td class="text-end">{{ game_stat.game_avg|floatformat:2|default:"0.00" }}</td>
+                       </tr>
+                     {% endfor %}
+                   </tbody>
+                 </table>
+               </div>
+               {% else %}
+                 {# Show message if no games AT ALL for this player #}
+                 <p id="no-history-message" class="text-center text-muted p-3">No game history available for this player.</p>
+               {% endif %}
+           </div> {# End table container #}
+        </div> {# End card-body #}
+      </div> {# End card #}
+      {# --- End Game History Table --- #}
+
+    {% else %} {# No stats calculated (e.g., player has no score records at all) #}
       <div class="alert alert-warning" role="alert">No score data found for {{ selected_player.name }}.</div>
     {% endif %} {# End if stats #}
 
   {% elif player_id %} {# Player ID given but player not found #}
       <div class="alert alert-danger" role="alert">Player with ID {{ player_id }} not found.</div>
-  {% else %} {# Initial state #}
+  {% else %} {# Initial state - No player selected #}
       <div class="alert alert-info" role="alert">Please select a player to view their statistics.</div>
   {% endif %} {# End if selected_player #}
 
 </div> {# End container #}
+{# --- Top Players Chart Script --- #}
+{% if top_players_chart_json %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const ctx = document.getElementById('topPlayersChart');
+  if (!ctx) return;
 
-{# ======================= Chart.js Script ======================= #}
-{# Only include Chart.js and chart logic if data exists #}
-{% if chart_data_json %}
-  {# Include Chart.js library (e.g., from CDN) #}
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  {# Include date adapter and Luxon (optional but recommended for time axis) #}
-  <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.1.0/dist/chartjs-adapter-luxon.min.js"></script>
+  const rawJson = ('{{ top_players_chart_json|safe|escapejs }}' || '').trim();
+  if (!rawJson || !rawJson.startsWith('{')) return;
 
+  try {
+    const chartData = JSON.parse(rawJson);
+    const existing = Chart.getChart(ctx);
+    if (existing) existing.destroy();
+
+    // Calculate min and max scores for the color scale
+    const minScore = Math.min(...chartData.data);
+    const maxScore = Math.max(...chartData.data);
+
+    // Generate background colors based on score values
+    const backgroundColors = chartData.data.map(score => {
+      // Calculate color based on score relative to min/max
+      return getColorGradient(score, minScore, maxScore);
+    });
+
+    // Create the chart with color-coded bars
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: chartData.labels,
+        datasets: [{
+          label: 'Total Score',
+          data: chartData.data,
+          backgroundColor: backgroundColors,
+          borderColor: backgroundColors.map(color => color.replace('0.7', '1')),
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return `${context.dataset.label}: ${context.parsed.y}`;
+              }
+            }
+          },
+          legend: { display: false },
+          title: { display: false }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { stepSize: 10 }
+          }
+        }
+      }
+    });
+
+    // Color gradient helper function
+    function getColorGradient(value, min, max) {
+      // Convert to a 0-1 scale
+      const normalizedValue = Math.min(Math.max((value - min) / (max - min), 0), 1);
+      
+      // Create a blue gradient from light to dark
+      // For dark blue: rgb(0, 48, 143)
+      // For light blue: rgb(173, 216, 230)
+      
+      const r = Math.round(173 - (normalizedValue * 173));
+      const g = Math.round(216 - (normalizedValue * 168));
+      const b = Math.round(230 - (normalizedValue * 87));
+      
+      return `rgba(${r}, ${g}, ${b}, 0.7)`;
+    }
+
+  } catch (err) {
+    console.error("Error parsing top player chart data:", err);
+    if (ctx.parentNode) {
+      ctx.parentNode.innerHTML = '<p class="text-muted text-center">Error loading chart.</p>';
+    }
+  }
+});
+</script>
+{% endif %}
+{# ======================= Chart.js Script (Requires Chart.js library included in base) ======================= #}
+{% if chart_data_json is not None %} {# Check if None in template BEFORE outputting script tag content #}
+  {# Assume Chart.js & adapter are loaded in base template or here via CDN #}
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       const ctx = document.getElementById('performanceChart');
       if (ctx) {
-        // Parse the JSON data passed from the Django template
-        // Use |safe filter to prevent auto-escaping of JSON string
-        const chartData = JSON.parse('{{ chart_data_json|safe|escapejs }}');
+        // Get the raw string, carefully handling potential emptiness
+        // Use `|| ''` as a fallback in case None renders strangely, ensuring we have a string.
+        const rawJsonString = ('{{ chart_data_json|safe|escapejs }}' || '').trim();
+        console.log("Raw JSON string received:", rawJsonString); // Debug log
 
-        if (chartData && chartData.labels && chartData.data) {
-            new Chart(ctx, {
-                type: 'line', // Line chart for trend
-                data: {
-                    labels: chartData.labels, // Dates from view
-                    datasets: [{
-                        label: 'Avg Score per Cycle',
-                        data: chartData.data, // Average scores from view
-                        borderColor: 'rgb(75, 192, 192)', // Example color
-                        tension: 0.1 // Slight curve to the line
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true, // Adjust as needed
-                    scales: {
-                        x: {
-                            type: 'time', // Use time scale for dates
-                            time: {
-                                unit: 'day', // Adjust unit based on data density (day, month, year)
-                                tooltipFormat: 'DD MMM yyyy', // Format for tooltips
-                                displayFormats: {
-                                   day: 'MMM d, yyyy' // Format for axis labels
-                                }
-                            },
-                            title: {
-                                display: true,
-                                text: 'Game Date'
-                            }
-                        },
-                        y: {
-                            beginAtZero: true, // Start Y axis at 0
-                            title: {
-                                display: true,
-                                text: 'Average Score per Cycle'
-                            }
-                        }
-                    },
-                    plugins: {
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                        },
-                        title: {
-                            display: true,
-                            text: 'Player Performance Over Time'
-                        }
+        // Check if the string is actually present and looks like JSON start/end
+        if (rawJsonString && rawJsonString.startsWith('{') && rawJsonString.endsWith('}')) {
+            try {
+                const chartData = JSON.parse(rawJsonString);
+                console.log("Parsed chart data:", chartData); // Debug log
+
+                if (chartData && chartData.labels && chartData.data && chartData.labels.length > 0) {
+                    // Destroy existing chart instance if it exists
+                    let existingChart = Chart.getChart(ctx);
+                    if (existingChart) {
+                        existingChart.destroy();
                     }
+
+                    new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: chartData.labels,
+                            datasets: [{
+                                label: 'Avg Score per Cycle',
+                                data: chartData.data,
+                                borderColor: 'rgb(75, 192, 192)',
+                                backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                                tension: 0.1,
+                                pointRadius: 3,
+                                pointHoverRadius: 5
+                            }]
+                        },
+                        options: { // Keep your existing options
+                           responsive: true,
+                           maintainAspectRatio: false,
+                           scales: { /* ... */ },
+                           plugins: { /* ... */ }
+                        }
+                    });
+                } else {
+                    console.warn("Chart data parsed but invalid or empty.");
+                    ctx.parentNode.innerHTML = '<p class="text-center text-muted">Not enough game data to display performance trend.</p>';
                 }
-            });
+            } catch (e) {
+                console.error("Raw JSON String that failed parsing:", rawJsonString); // Log the string that failed
+                console.error("Error parsing chart data JSON:", e);
+                if (ctx.parentNode) {
+                    ctx.parentNode.innerHTML = '<p class="text-center text-danger">Error loading chart: Invalid data format during parsing.</p>';
+                }
+            }
         } else {
-            console.warn("Chart data format invalid or missing.");
+             // Handle cases where rawJsonString is empty, 'None', or doesn't look like JSON
+             console.warn("No valid chart JSON data received from template.");
+             if (ctx.parentNode) {
+                 ctx.parentNode.innerHTML = '<p class="text-center text-muted">No performance data available to display chart.</p>';
+             }
         }
       } else {
         console.warn("Canvas element 'performanceChart' not found.");
       }
     });
   </script>
-{% endif %} {# End if chart_data_json #}
+{% else %}
+  {# Explicitly handle case where chart_data_json is None in the view context #}
+  <script>
+       document.addEventListener('DOMContentLoaded', function() {
+            const chartContainer = document.getElementById('performanceChart')?.parentNode;
+            if (chartContainer) {
+                 console.log("Chart data JSON was None, rendering 'no data' message.");
+                 chartContainer.innerHTML = '<p class="text-center text-muted">No performance data available to display chart.</p>';
+            }
+       });
+  </script>
+{% endif %} {# End if chart_data_json is not None #}
 {# ======================= End Chart.js Script ======================= #}
+{# ======================= Game History Pagination Script ======================= #}
+{% if selected_player and paginator and paginator.num_pages > 0 %}
+{# Only include script if there is a selected player and pagination is relevant #}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const paginationControls = document.getElementById('game-history-pagination-controls');
+    // Check if pagination controls exist before proceeding
+    if (!paginationControls) {
+        console.log("Pagination controls not found, skipping pagination script setup.");
+        return;
+    }
+
+    const prevButton = document.getElementById('prev-page-btn');
+    const nextButton = document.getElementById('next-page-btn');
+    const pageInfo = document.getElementById('page-info');
+    const tableBody = document.getElementById('game-history-tbody');
+    const loadingIndicator = document.getElementById('history-loading');
+    const tableContainer = document.getElementById('game-history-table-container');
+    // const noHistoryMessage = document.getElementById('no-history-message'); // Might not be needed if table always exists
+
+    // --- Helper Function to Render Table Rows ---
+    function renderTableRows(games) {
+        if (!tableBody) {
+            console.error("Table body 'game-history-tbody' not found.");
+            return;
+        }
+        tableBody.innerHTML = ''; // Clear existing rows
+
+        if (!games || games.length === 0) {
+             tableBody.innerHTML = '<tr><td colspan="3" class="text-center text-muted p-3">No games found for this page.</td></tr>';
+             return;
+        }
+
+        const fragment = document.createDocumentFragment(); // Use fragment for performance
+        games.forEach(game => {
+            const row = document.createElement('tr');
+
+            const dateCell = row.insertCell();
+            dateCell.textContent = game.date || 'N/A';
+
+            const detailsCell = row.insertCell();
+            const link = document.createElement('a');
+            link.href = game.game_url || '#'; // Use URL from API response
+            link.textContent = `vs ${game.opponent_name || 'N/A'} at ${game.location_name || 'N/A'}`;
+            detailsCell.appendChild(link);
+
+            const avgScoreCell = row.insertCell();
+            avgScoreCell.classList.add('text-end');
+            avgScoreCell.textContent = game.game_avg !== null ? game.game_avg.toFixed(2) : '0.00';
+
+            fragment.appendChild(row);
+        });
+        tableBody.appendChild(fragment); // Append all rows at once
+    }
+
+    // --- Function to Fetch and Update Page ---
+    async function fetchGameHistoryPage(pageNum) {
+        const playerId = paginationControls.dataset.playerId;
+        if (!playerId) {
+            console.error("Player ID not found in pagination controls dataset.");
+            return;
+        }
+        // Construct the AJAX URL
+        const url = `/ajax/player/${playerId}/games/page/${pageNum}/`;
+
+        // Show loading state
+        if(loadingIndicator) loadingIndicator.style.display = 'block';
+        if (tableContainer) tableContainer.style.display = 'none'; // Hide table while loading
+        if (prevButton) prevButton.disabled = true; // Disable buttons during fetch
+        if (nextButton) nextButton.disabled = true;
+
+        try {
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
+                    // Optional: Add CSRF token header if needed for POST/PUT etc., but usually not for GET
+                    // 'X-CSRFToken': '{{ csrf_token }}'
+                }
+            });
+
+            // Always check response status
+            if (!response.ok) {
+                let errorMsg = `HTTP error! status: ${response.status}`;
+                try {
+                    const errData = await response.json();
+                    errorMsg += ` - ${errData.error || 'Unknown server error'}`;
+                } catch (e) { /* Ignore if response body isn't JSON */ }
+                throw new Error(errorMsg);
+            }
+
+            const data = await response.json();
+
+            // Check for application-level errors in the JSON response
+            if (data.error) {
+                 throw new Error(`API Error: ${data.error}`);
+            }
+
+            // Update table content
+            if (tableContainer) tableContainer.style.display = 'block';
+            renderTableRows(data.games);
+
+            // Update pagination controls state
+            paginationControls.dataset.currentPage = data.current_page;
+            if (prevButton) prevButton.disabled = !data.has_previous;
+            if (nextButton) nextButton.disabled = !data.has_next;
+            if (pageInfo) pageInfo.textContent = `Page ${data.current_page} of ${data.total_pages}`;
+
+        } catch (error) {
+            console.error('Error fetching game history:', error);
+            if (tableBody) {
+                 tableBody.innerHTML = `<tr><td colspan="3" class="text-center text-danger p-3">Could not load game history. ${error.message || ''}</td></tr>`;
+            }
+             // Keep buttons disabled on error
+             if (prevButton) prevButton.disabled = true;
+             if (nextButton) nextButton.disabled = true;
+        } finally {
+            // Hide loading indicator regardless of success or failure
+            if(loadingIndicator) loadingIndicator.style.display = 'none';
+             // Ensure buttons are re-enabled based on latest state *unless* there was an error above
+             // This prevents buttons staying disabled if fetch succeeded but rendering failed somehow
+             if (prevButton && !prevButton.disabled && !error) { // Check if not already disabled by error handling
+                 const currentPage = parseInt(paginationControls.dataset.currentPage, 10);
+                 prevButton.disabled = currentPage <= 1;
+             }
+             if (nextButton && !nextButton.disabled && !error) {
+                 const currentPage = parseInt(paginationControls.dataset.currentPage, 10);
+                 const totalPages = parseInt(paginationControls.dataset.totalPages, 10);
+                 nextButton.disabled = currentPage >= totalPages;
+             }
+        }
+    }
+
+    // --- Event Listeners ---
+    if (prevButton) {
+        prevButton.addEventListener('click', () => {
+            const currentPage = parseInt(paginationControls.dataset.currentPage, 10);
+            if (!isNaN(currentPage) && currentPage > 1) {
+                fetchGameHistoryPage(currentPage - 1);
+            }
+        });
+    }
+
+    if (nextButton) {
+        nextButton.addEventListener('click', () => {
+            const currentPage = parseInt(paginationControls.dataset.currentPage, 10);
+            const totalPages = parseInt(paginationControls.dataset.totalPages, 10);
+            if (!isNaN(currentPage) && !isNaN(totalPages) && currentPage < totalPages) {
+                fetchGameHistoryPage(currentPage + 1);
+            }
+        });
+    }
+
+    // Initial state check (redundant if server-side handles d-none correctly, but safe)
+    const totalPagesInitial = parseInt(paginationControls.dataset.totalPages, 10);
+    if (isNaN(totalPagesInitial) || totalPagesInitial <= 1) {
+        paginationControls.classList.add('d-none');
+    } else {
+         paginationControls.classList.remove('d-none');
+         // Set initial button states based on server-rendered page data
+         const currentPageInitial = parseInt(paginationControls.dataset.currentPage, 10);
+         if(prevButton) prevButton.disabled = (isNaN(currentPageInitial) || currentPageInitial <= 1);
+         if(nextButton) nextButton.disabled = (isNaN(currentPageInitial) || isNaN(totalPagesInitial) || currentPageInitial >= totalPagesInitial);
+    }
+
+});
+</script>
+{% endif %} {# End if selected_player and paginator #}
+{# ======================= End Game History Pagination Script ======================= #}
 
 {% endblock %}
