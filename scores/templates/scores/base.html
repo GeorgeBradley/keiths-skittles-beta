@@ -23,7 +23,7 @@
 <body>
     {# --- MODIFIED NAVBAR --- #}
     <nav class="navbar navbar-expand-lg navbar-light bg-light border-bottom"> {# Changed classes here #}
-        <div class="container-fluid">
+        <div class="container">
           <a class="navbar-brand {% if request.resolver_match.url_name == 'start_game' %}active{% endif %}" href="{% url 'start_game' %}">
             {# Replace 'img/logo.png' with the correct path to YOUR logo #}
             <img src="{% static 'img/the-nutters-logo.webp' %}" alt="Keith's Skittles Logo" class="d-inline-block align-text-top">
