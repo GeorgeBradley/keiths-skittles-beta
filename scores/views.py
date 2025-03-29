@@ -9,7 +9,9 @@ from django.db.models.functions import Coalesce
 from django.views.decorators.http import require_POST
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from itertools import zip_longest
+import logging # Use standard logging
 
+from django.db import transaction # For atomic operations if needed
 
 # --- CORRECTED IMPORT ---
 from .models import Game, Player, GamePlayer, Score, Opponent, Location, GameType # Added GameType
@@ -132,154 +134,226 @@ def start_game(request):
 
     return render(request, "scores/start_game.html", {"form": form})
 
+logger = logging.getLogger(__name__)
+
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 @staff_member_required
+# Get an instance of a logger
+# Configure logging (place this preferably in settings.py or a logging config file)
+# Basic config for demonstration:
+
 def live_game(request, game_id):
+    """
+    Handles the live game interface, player selection, and AJAX score submission
+    with robust error handling and specific validation feedback.
+    """
     game = get_object_or_404(Game, id=game_id)
     current_round_session_key = f"game_{game_id}_current_round"
     current_round = request.session.get(current_round_session_key, 1)
-    if not isinstance(current_round, int):
+    if not isinstance(current_round, int) or current_round < 1:
         current_round = 1
-
-    # Sync current round from DB
-    round_agg = Score.objects.filter(game=game).aggregate(max_score_round=Max("round_number"))
-    player_agg = GamePlayer.objects.filter(game=game).aggregate(max_player_round=Max("round_number"))
-    latest_round = max(round_agg["max_score_round"] or 0, player_agg["max_player_round"] or 0)
-
-    if latest_round > current_round:
-        current_round = latest_round
         request.session[current_round_session_key] = current_round
-        print(f"Synced session round to {current_round} from DB")
 
-    print(f"Live Game View - Game ID: {game_id}, Current Round: {current_round}")
+    # --- Sync current round from DB (Simplified - review if needed) ---
+    try:
+        round_agg = Score.objects.filter(game=game).aggregate(max_score_round=db_models.Max("round_number"))
+        player_agg = GamePlayer.objects.filter(game=game).aggregate(max_player_round=db_models.Max("round_number"))
+        latest_db_round = max(round_agg["max_score_round"] or 0, player_agg["max_player_round"] or 0)
+        effective_latest_round = max(latest_db_round, game.game_players.aggregate(max_round=db_models.Max('round_number'))['max_round'] or 0)
+        db_current_round = effective_latest_round if effective_latest_round > 0 else 1
+
+        # Optional: Implement stricter sync logic if required
+        # if db_current_round != current_round:
+        #     logger.warning(f"Session/DB Round Mismatch: Session={current_round}, DB={db_current_round}")
+        #     # current_round = db_current_round # Force sync?
+        #     # request.session[current_round_session_key] = current_round
+
+    except Exception as e:
+        logger.error(f"Error during round sync for game {game_id}: {e}", exc_info=True)
+
+    logger.info(f"Accessing Live Game View - Game ID: {game_id}, Session Round: {current_round}")
 
     # --- Player Selection Logic ---
-    if not game.game_players.filter(round_number=current_round, team="own").exists():
+    try:
+        players_exist = game.game_players.filter(round_number=current_round, team="own").exists()
+    except Exception as e:
+         logger.error(f"DB Error checking players for game {game_id}, round {current_round}: {e}", exc_info=True)
+         return render(request, "scores/live_game.html", {"error": "Database error checking player setup.", "game": game, "current_round": current_round})
+
+    if not players_exist:
+        logger.info(f"No players found for game {game_id} round {current_round}. Rendering player selection.")
         if request.method == "POST" and "select_players" in request.POST:
             formset = GamePlayerFormSet(request.POST, queryset=GamePlayer.objects.none(), prefix='player')
             round_options_form = RoundOptionsForm(request.POST)
             if formset.is_valid() and round_options_form.is_valid():
-                for instance in formset.save(commit=False):
-                    if instance.player:
-                        instance.game = game
-                        instance.round_number = current_round
-                        instance.team = "own"
-                        instance.save()
+                try:
+                    with transaction.atomic():
+                        # Save own players
+                        instances = []
+                        for form in formset:
+                            player = form.cleaned_data.get('player')
+                            if player:
+                                instances.append(GamePlayer(
+                                    game=game, player=player, round_number=current_round, team="own"
+                                ))
+                        if instances: GamePlayer.objects.bulk_create(instances)
 
-                own_players = game.game_players.filter(round_number=current_round, team="own").select_related("player").order_by("id")
-                for gp in own_players:
-                    opp_name = f"Opp. {gp.player.name}"
-                    if not game.game_players.filter(round_number=current_round, team="opp", player__name=opp_name).exists():
-                        opp_player, _ = Player.objects.get_or_create(name=opp_name)
-                        GamePlayer.objects.create(game=game, player=opp_player, round_number=current_round, team="opp")
+                        # Create opponents
+                        own_players_qs = GamePlayer.objects.filter(game=game, round_number=current_round, team="own").select_related("player")
+                        opp_players_to_create = []
+                        existing_opp_names = set(GamePlayer.objects.filter(game=game, round_number=current_round, team="opp").values_list('player__name', flat=True))
+                        for gp in own_players_qs:
+                            opp_name = f"Opp. {gp.player.name}"
+                            if opp_name not in existing_opp_names:
+                                opp_player, _ = Player.objects.get_or_create(name=opp_name)
+                                opp_players_to_create.append(GamePlayer(game=game, player=opp_player, round_number=current_round, team="opp"))
+                                existing_opp_names.add(opp_name)
+                        if opp_players_to_create: GamePlayer.objects.bulk_create(opp_players_to_create)
 
-                request.session[f"round_{current_round}_team_first"] = round_options_form.cleaned_data["team_first_round"]
-                request.session[current_round_session_key] = current_round
-                return redirect("live_game", game_id=game.id)
+                    request.session[f"round_{current_round}_team_first"] = round_options_form.cleaned_data["team_first_round"]
+                    request.session[current_round_session_key] = current_round
+                    logger.info(f"Player selection successful for game {game_id}, round {current_round}.")
+                    return redirect("live_game", game_id=game.id)
+                except Exception as e:
+                     logger.error(f"Error saving player selection/opponents: {e}", exc_info=True)
+                     return render(request, "scores/select_players.html", {
+                        "formset": formset, "round_options_form": round_options_form, "game": game,
+                        "current_round": current_round, "error": "Error saving selection."
+                     })
+            else:
+                 logger.warning(f"Player selection validation failed. Errors: Formset={formset.errors}, Options={round_options_form.errors}")
+                 return render(request, "scores/select_players.html", {
+                    "formset": formset, "round_options_form": round_options_form, "game": game,
+                    "current_round": current_round, "error": "Please correct errors."
+                 })
+        else: # GET
+            formset = GamePlayerFormSet(queryset=GamePlayer.objects.none(), prefix='player')
+            round_options_form = RoundOptionsForm(initial={'team_first_round': request.session.get(f"round_{current_round}_team_first", "own")})
             return render(request, "scores/select_players.html", {
-                "formset": formset,
-                "round_options_form": round_options_form,
-                "game": game,
-                "current_round": current_round
+                "formset": formset, "round_options_form": round_options_form, "game": game, "current_round": current_round
             })
+    # --- End Player Selection ---
 
-        formset = GamePlayerFormSet(queryset=GamePlayer.objects.none(), prefix='player')
-        round_options_form = RoundOptionsForm(initial={
-            'team_first_round': request.session.get(f"round_{current_round}_team_first", "own")
-        })
-        return render(request, "scores/select_players.html", {
-            "formset": formset,
-            "round_options_form": round_options_form,
-            "game": game,
-            "current_round": current_round
-        })
 
     # --- AJAX Score Submission ---
     if request.method == "POST" and request.headers.get('x-requested-with') == 'XMLHttpRequest':
-        state = get_game_state(game, current_round, request)
-        current_player_obj = state.get("current_player_obj")
-
-        if state["round_complete"]:
+        try: # Overall AJAX try block
+            # Get state
             try:
-                complete_url = reverse("round_complete", args=[game.id])
+                state = get_game_state(game, current_round, request)
+                current_player_obj = state.get("current_player_obj") # Should be GamePlayer instance
             except Exception as e:
-                print(f"ERROR (AJAX - Already Complete): {e}")
-                complete_url = None
-            return JsonResponse({
-                "success": False,
-                "error": "Round already complete.",
-                "round_complete": True,
-                "round_complete_url": complete_url
-            }, status=400)
+                 logger.error(f"AJAX Error getting game state: {e}", exc_info=True)
+                 return JsonResponse({"success": False, "error": "Could not determine game state."}, status=500)
 
-        if not current_player_obj:
-            return JsonResponse({"success": False, "error": "Could not determine current player."}, status=400)
+            # Check round complete
+            if state.get("round_complete"):
+                logger.warning(f"AJAX attempt score in completed round {current_round}, game {game_id}")
+                try: complete_url = reverse("round_complete", args=[game.id])
+                except Exception: complete_url = None
+                return JsonResponse({"success": False, "error": "Round already complete.", "round_complete": True, "current_round": current_round, "round_complete_url": complete_url}, status=400)
 
-        score_form = ScoreForm(request.POST)
-        if score_form.is_valid():
-            try:
-                score = score_form.save(commit=False)
-                score.game = game
-                score.player = current_player_obj.player
-                score.round_number = current_round
-                score.cycle_number = state["current_cycle"]
-                score.total = (score.roll1 or 0) + (score.roll2 or 0) + (score.roll3 or 0)
-                score.save()
+            # Check player validity
+            if not isinstance(current_player_obj, GamePlayer):
+                 logger.error(f"AJAX invalid current player object type: {type(current_player_obj)}")
+                 return JsonResponse({"success": False, "error": "Could not determine current player."}, status=400)
 
-                new_state = get_game_state(game, current_round, request)
+            # Process score form
+            score_form = ScoreForm(request.POST)
+            if score_form.is_valid():
+                # --- Save Valid Score ---
                 try:
-                    completion_url = reverse("round_complete", args=[game.id]) if new_state["round_complete"] else None
-                except Exception as e:
-                    print(f"ERROR (AJAX - Just Completed): {e}")
+                    with transaction.atomic():
+                        score = score_form.save(commit=False)
+                        score.game = game
+                        score.player = current_player_obj.player
+                        score.round_number = current_round
+                        score.cycle_number = state.get("current_cycle", 1)
+                        score.total = (score_form.cleaned_data.get('roll1') or 0) + \
+                                      (score_form.cleaned_data.get('roll2') or 0) + \
+                                      (score_form.cleaned_data.get('roll3') or 0)
+                        score.save()
+                    logger.info(f"Score saved: Game {game_id}, R{current_round}, C{score.cycle_number}, P{score.player.id}")
+
+                    # --- Get New State & Return Success ---
+                    new_state = get_game_state(game, current_round, request)
+                    is_round_complete = new_state.get("round_complete", False)
                     completion_url = None
+                    if is_round_complete:
+                        try: completion_url = reverse("round_complete", args=[game.id])
+                        except Exception: pass
+                    new_score_data = { 'id': score.id, 'player__name': score.player.name, 'cycle_number': score.cycle_number, 'roll1': score.roll1, 'roll2': score.roll2, 'roll3': score.roll3, 'total': score.total }
 
-                return JsonResponse({
-                    "success": True,
-                    "message": new_state["message"],
-                    "plus_minus": new_state["plus_minus"],
-                    "scores": new_state["scores_data"],
-                    "new_score": {
-                        'player__name': score.player.name,
-                        'cycle_number': score.cycle_number,
-                        'roll1': score.roll1,
-                        'roll2': score.roll2,
-                        'roll3': score.roll3,
-                        'total': score.total,
-                        'id': score.id
-                    },
-                    "round_complete": new_state["round_complete"],
-                    "round_complete_url": completion_url
-                })
-            except Exception as e:
-                print(f"Error processing score submission: {e}")
-                return JsonResponse({"success": False, "error": "Error processing score data."}, status=500)
+                    # Return success payload, including the message from get_game_state (which should contain next player prompt)
+                    return JsonResponse({
+                        "success": True,
+                        "message": new_state.get("message", "Score recorded."), # CRITICAL: Ensure this message includes the next player's turn
+                        "plus_minus": new_state.get("plus_minus"),
+                        "new_score": new_score_data,
+                        "round_complete": is_round_complete,
+                        "current_round": current_round,
+                        "round_complete_url": completion_url
+                    })
+                except Exception as e:
+                    logger.error(f"AJAX error saving valid score: {e}", exc_info=True)
+                    return JsonResponse({"success": False, "error": "Error saving score data."}, status=500)
 
-        return JsonResponse({
-            "success": False,
-            "errors": json.loads(score_form.errors.as_json())
-        }, status=400)
+            else: # Score Form IS INVALID
+                # --- Handle Invalid Score Form ---
+                log_message = f"AJAX validation failed: Game {game_id}, R{current_round}, Input: {request.POST.dict()}"
+                try:
+                    errors_json = score_form.errors.as_json()
+                    log_message += f" Errors: {errors_json}"
+                    logger.warning(log_message)
+                    errors_dict = json.loads(errors_json)
+
+                    # Get current player name for the error response prompt
+                    player_name_for_error = "Current Player" # Fallback
+                    if current_player_obj and hasattr(current_player_obj, 'player') and current_player_obj.player:
+                         player_name_for_error = current_player_obj.player.name
+
+                    response_payload = {
+                        "success": False,
+                        "errors": errors_dict, # Detailed validation errors
+                        "error": "Validation failed.", # Simple flag message
+                        "current_player_name": player_name_for_error # Name to maintain prompt
+                    }
+                    logger.debug(f"-----> Sending validation error JSON: {response_payload}")
+                    return JsonResponse(response_payload, status=400)
+                except Exception as e:
+                    logger.error(f"AJAX CRITICAL ERROR preparing validation error JSON: {e}. Original log: '{log_message}'", exc_info=True)
+                    return JsonResponse({"success": False, "error": "Validation failed & server error reporting details."}, status=500)
+
+        except Exception as e: # Catch any other error in AJAX block
+            logger.error(f"Unhandled Exception in AJAX score submission: {e}", exc_info=True)
+            return JsonResponse({"success": False, "error": "An unexpected server error occurred."}, status=500)
 
     # --- Initial Page Load (GET) ---
-    state = get_game_state(game, current_round, request)
-    score_form = ScoreForm()
+    else: # Not POST or not AJAX
+        try:
+            logger.info(f"Handling GET request for live_game {game_id}, round {current_round}")
+            state = get_game_state(game, current_round, request)
+            score_form = ScoreForm()
+            is_round_complete_get = state.get("round_complete", False)
+            completion_url_get = None
+            if is_round_complete_get:
+                 try: completion_url_get = reverse("round_complete", args=[game.id])
+                 except Exception: pass
 
-    try:
-        complete_url = reverse("round_complete", args=[game.id]) if state["round_complete"] else None
-    except Exception as e:
-        print(f"ERROR (Initial Render): {e}")
-        complete_url = None
-
-    return render(request, "scores/live_game.html", {
-        "game": game,
-        "current_round": current_round,
-        "score_form": score_form,
-        "message": state["message"],
-        "scores": state["scores_qs"],
-        "plus_minus": state["plus_minus"],
-        "round_complete": state["round_complete"],
-        "round_complete_url": complete_url,
-        "error": state["error"]
-    })
+            context = {
+                "game": game, "current_round": current_round, "score_form": score_form,
+                "message": state.get("message"), "scores": state.get("scores_qs"),
+                "plus_minus": state.get("plus_minus"), "round_complete": is_round_complete_get,
+                "round_complete_url": completion_url_get, "error": state.get("error")
+            }
+            return render(request, "scores/live_game.html", context)
+        except Exception as e:
+             logger.error(f"Error during initial GET load: {e}", exc_info=True)
+             context = {"error": "Failed to load game data.", "game": game, "current_round": current_round}
+             return render(request, "scores/live_game.html", context) # Render same template with error
 
 @staff_member_required
 def round_complete(request, game_id):
